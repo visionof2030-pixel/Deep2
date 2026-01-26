@@ -1,6 +1,7 @@
+# main.py
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import os, itertools
@@ -50,7 +51,7 @@ def admin_auth(x_admin_token: str = Header(...)):
 def root():
     return FileResponse("static/login.html")
 
-@app.get("/admin", response_class=HTMLResponse)
+@app.get("/admin")
 def admin_page():
     return FileResponse("static/admin.html")
 

@@ -1,0 +1,116 @@
+<!-- admin.html -->
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>لوحة التحكم</title>
+
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0d6efd">
+
+<link rel="manifest" href="/manifest.json">
+
+<style>
+body{font-family:tahoma;background:#f4f6f8;padding:10px;margin:0}
+.card{background:#fff;padding:15px;border-radius:8px;margin-bottom:15px}
+input,button{padding:10px;margin:5px;width:100%}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{border:1px solid #ddd;padding:6px;text-align:center}
+th{background:#eee}
+button{background:#0d6efd;color:white;border:none;border-radius:6px}
+</style>
+</head>
+<body>
+
+<h3>لوحة التحكم</h3>
+
+<div class="card">
+<h4>توليد كود</h4>
+<input id="days" type="number" placeholder="مدة بالأيام">
+<input id="limit" type="number" placeholder="عدد الاستخدام">
+<button onclick="generate()">توليد</button>
+<pre id="genResult"></pre>
+</div>
+
+<div class="card">
+<h4>الأكواد</h4>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>الكود</th>
+<th>الحالة</th>
+<th>الانتهاء</th>
+<th>الاستخدام</th>
+<th>إجراءات</th>
+</tr>
+</thead>
+<tbody id="codes"></tbody>
+</table>
+</div>
+
+<script>
+const API = location.origin
+let TOKEN = localStorage.getItem("ADMIN_TOKEN") || prompt("ادخل ADMIN TOKEN")
+localStorage.setItem("ADMIN_TOKEN", TOKEN)
+
+async function generate(){
+  const days = document.getElementById("days").value
+  const limit = document.getElementById("limit").value
+  const res = await fetch(API+"/admin/generate",{
+    method:"POST",
+    headers:{
+      "Content-Type":"application/json",
+      "X-Admin-Token":TOKEN
+    },
+    body:JSON.stringify({
+      expires_at: days ? parseInt(days) : null,
+      usage_limit: limit ? parseInt(limit) : null
+    })
+  })
+  const d = await res.json()
+  document.getElementById("genResult").innerText = d.code
+  load()
+}
+
+async function load(){
+  const res = await fetch(API+"/admin/codes",{headers:{"X-Admin-Token":TOKEN}})
+  const data = await res.json()
+  const tbody = document.getElementById("codes")
+  tbody.innerHTML=""
+  data.forEach(c=>{
+    const tr=document.createElement("tr")
+    tr.innerHTML=`
+      <td>${c.id}</td>
+      <td>${c.code}</td>
+      <td>${c.active?"مفعل":"موقف"}</td>
+      <td>${c.expires_at||"-"}</td>
+      <td>${c.usage_count}/${c.usage_limit||"∞"}</td>
+      <td>
+        <button onclick="toggle(${c.id})">تبديل</button>
+        <button onclick="del(${c.id})">حذف</button>
+      </td>`
+    tbody.appendChild(tr)
+  })
+}
+
+async function toggle(id){
+  await fetch(API+"/admin/code/"+id+"/toggle",{method:"PUT",headers:{"X-Admin-Token":TOKEN}})
+  load()
+}
+
+async function del(id){
+  if(!confirm("حذف؟"))return
+  await fetch(API+"/admin/code/"+id,{method:"DELETE",headers:{"X-Admin-Token":TOKEN}})
+  load()
+}
+
+if("serviceWorker" in navigator){
+  navigator.serviceWorker.register("/sw.js")
+}
+
+load()
+</script>
+</body>
+</html>

@@ -1,55 +1,46 @@
-from fastapi import FastAPI, HTTPException, Depends, Header, Body
+from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
-from datetime import datetime, timedelta
-from pathlib import Path
-import os
-import itertools
+import os, itertools
 import google.generativeai as genai
 from database import init_db, get_connection
+from create_key import create_key
 from security import activation_required
 
 init_db()
 
-ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-class AskReq(BaseModel):
+class Req(BaseModel):
     prompt: str
 
 class GenerateKeyReq(BaseModel):
-    days: int | None = None
+    expires_at: int | None = None
     usage_limit: int | None = None
     name: str | None = None
 
-api_keys = [
-    os.getenv("GEMINI_API_KEY_1"),
-    os.getenv("GEMINI_API_KEY_2"),
-    os.getenv("GEMINI_API_KEY_3"),
-    os.getenv("GEMINI_API_KEY_4"),
-    os.getenv("GEMINI_API_KEY_5"),
-]
+api_keys = [os.getenv(f"GEMINI_API_KEY_{i}") for i in range(1, 8)]
 api_keys = [k for k in api_keys if k]
-key_cycle = itertools.cycle(api_keys)
+key_cycle = itertools.cycle(api_keys) if api_keys else None
 
 def get_api_key():
-    if not api_keys:
-        raise HTTPException(status_code=500, detail="No API key")
+    if not key_cycle:
+        raise HTTPException(500, "No Gemini key")
     return next(key_cycle)
 
 def admin_auth(x_admin_token: str = Header(...)):
     if x_admin_token != ADMIN_TOKEN:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+        raise HTTPException(401, "Unauthorized")
 
 @app.get("/")
 def root():
@@ -60,32 +51,15 @@ def activate(_: None = Depends(activation_required)):
     return {"status": "activated"}
 
 @app.post("/ask")
-def ask(req: AskReq, _: None = Depends(activation_required)):
+def ask(req: Req, _: None = Depends(activation_required)):
     genai.configure(api_key=get_api_key())
     model = genai.GenerativeModel("models/gemini-2.5-flash-lite")
-    res = model.generate_content(req.prompt)
-    return {"answer": res.text}
+    r = model.generate_content(req.prompt)
+    return {"answer": r.text}
 
 @app.post("/admin/generate", dependencies=[Depends(admin_auth)])
 def admin_generate(req: GenerateKeyReq):
-    code = os.urandom(8).hex().upper()
-    expires_at = None
-
-    if req.days:
-        expires_at = datetime.utcnow() + timedelta(days=req.days)
-
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute(
-        """
-        INSERT INTO activation_codes
-        (code, name, is_active, expires_at, usage_limit, usage_count)
-        VALUES (%s, %s, true, %s, %s, 0)
-        """,
-        (code, req.name, expires_at, req.usage_limit),
-    )
-    conn.commit()
-    conn.close()
+    code = create_key(req.expires_at, req.usage_limit, req.name)
     return {"code": code}
 
 @app.get("/admin/codes", dependencies=[Depends(admin_auth)])
@@ -100,58 +74,41 @@ def admin_codes():
     rows = cur.fetchall()
     conn.close()
 
-    now = datetime.utcnow()
-    data = []
-    for r in rows:
-        remaining = None
-        if r[4]:
-            remaining = max(0, (r[4] - now).days)
-        data.append({
+    return [
+        {
             "id": r[0],
             "code": r[1],
             "name": r[2],
-            "active": r[3],
+            "active": bool(r[3]),
             "expires_at": r[4],
-            "remaining_days": remaining,
             "usage_limit": r[5],
-            "usage_count": r[6],
-        })
-    return data
+            "usage_count": r[6]
+        }
+        for r in rows
+    ]
 
 @app.put("/admin/code/{code_id}/toggle", dependencies=[Depends(admin_auth)])
-def toggle_code(code_id: int):
+def toggle(code_id: int):
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("UPDATE activation_codes SET is_active = NOT is_active WHERE id=%s", (code_id,))
+    cur.execute("""
+        UPDATE activation_codes
+        SET is_active = CASE WHEN is_active=1 THEN 0 ELSE 1 END
+        WHERE id=?
+    """, (code_id,))
     conn.commit()
     conn.close()
     return {"status": "ok"}
 
 @app.delete("/admin/code/{code_id}", dependencies=[Depends(admin_auth)])
-def delete_code(code_id: int):
+def delete(code_id: int):
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("DELETE FROM activation_codes WHERE id=%s", (code_id,))
+    cur.execute("DELETE FROM activation_codes WHERE id=?", (code_id,))
     conn.commit()
     conn.close()
     return {"status": "deleted"}
 
 @app.get("/admin", response_class=HTMLResponse)
 def admin_page():
-    return Path("admin.html").read_text(encoding="utf-8")
-
-@app.get("/login.html")
-def login_page():
-    return FileResponse("login.html")
-
-@app.get("/admin.js")
-def admin_js():
-    return FileResponse("admin.js")
-
-@app.get("/manifest.json")
-def manifest():
-    return FileResponse("manifest.json")
-
-@app.get("/sw.js")
-def sw():
-    return FileResponse("sw.js")
+    return open("admin.html", encoding="utf-8").read()

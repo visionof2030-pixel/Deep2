@@ -15,8 +15,8 @@ def init_db():
             code TEXT UNIQUE NOT NULL,
             name TEXT,
             is_active BOOLEAN DEFAULT TRUE,
-            expires_at TIMESTAMP NULL,
-            usage_limit INTEGER NULL,
+            expires_at TIMESTAMP,
+            usage_limit INTEGER,
             usage_count INTEGER DEFAULT 0
         )
     """)

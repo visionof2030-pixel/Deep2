@@ -25,7 +25,7 @@ function login(){
   const t = document.getElementById("token").value.trim();
   if(!t) return alert("ادخل التوكن");
   localStorage.setItem("ADMIN_TOKEN", t);
-  location.href="/admin";
+  location.href="/static/admin.html";
 }
 </script>
 

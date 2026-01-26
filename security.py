@@ -27,7 +27,7 @@ def activation_required(x_activation_code: str = Header(...)):
         conn.close()
         raise HTTPException(status_code=401, detail="Code expired")
 
-    if limit and used >= limit:
+    if limit is not None and used >= limit:
         conn.close()
         raise HTTPException(status_code=401, detail="Usage limit reached")
 
@@ -35,5 +35,6 @@ def activation_required(x_activation_code: str = Header(...)):
         "UPDATE activation_codes SET usage_count = usage_count + 1 WHERE id=%s",
         (code_id,)
     )
+
     conn.commit()
     conn.close()

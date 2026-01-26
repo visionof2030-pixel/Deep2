@@ -1,4 +1,3 @@
-# main.py
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -11,7 +10,10 @@ from database import init_db, get_connection
 from create_key import create_key
 from security import activation_required
 
-init_db()
+try:
+    init_db()
+except Exception as e:
+    print("DB INIT ERROR:", e)
 
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
 
@@ -55,6 +57,10 @@ def root():
 def admin_page():
     return FileResponse("static/admin.html")
 
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
 @app.post("/activate")
 def activate(_: None = Depends(activation_required)):
     return {"status": "activated"}
@@ -82,7 +88,6 @@ def admin_codes():
     """)
     rows = cur.fetchall()
     conn.close()
-
     return [
         {
             "id": r[0],

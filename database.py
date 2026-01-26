@@ -9,7 +9,6 @@ def get_connection():
 def init_db():
     conn = get_connection()
     cur = conn.cursor()
-
     cur.execute("""
         CREATE TABLE IF NOT EXISTS activation_codes (
             id SERIAL PRIMARY KEY,
@@ -18,10 +17,8 @@ def init_db():
             is_active BOOLEAN DEFAULT TRUE,
             expires_at TIMESTAMP NULL,
             usage_limit INTEGER NULL,
-            usage_count INTEGER DEFAULT 0,
-            last_used_at TIMESTAMP NULL
+            usage_count INTEGER DEFAULT 0
         )
     """)
-
     conn.commit()
     conn.close()

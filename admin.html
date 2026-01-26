@@ -17,9 +17,7 @@
       padding: 20px;
       box-sizing: border-box;
     }
-    h1 {
-      margin-bottom: 20px;
-    }
+    h1 { margin-bottom: 20px; }
     .top {
       display: flex;
       flex-wrap: wrap;
@@ -32,20 +30,14 @@
       border: none;
       font-size: 14px;
     }
-    input {
-      flex: 1;
-    }
+    input { flex: 1; }
     button {
       background: #2563eb;
       color: #fff;
       cursor: pointer;
     }
-    button.danger {
-      background: #dc2626;
-    }
-    button.secondary {
-      background: #374151;
-    }
+    button.danger { background: #dc2626; }
+    button.secondary { background: #374151; }
     table {
       width: 100%;
       border-collapse: collapse;
@@ -65,45 +57,49 @@
     .logout {
       background: #991b1b;
       float: left;
+      margin-bottom: 15px;
     }
   </style>
 </head>
 <body>
 
-  <h1>لوحة التحكم</h1>
+<h1>لوحة التحكم</h1>
+<button class="logout" onclick="logout()">تسجيل خروج</button>
 
-  <button class="logout" onclick="logout()">تسجيل خروج</button>
+<div class="top">
+  <input id="name" placeholder="اسم المشترك (اختياري)">
+  <input id="days" type="number" placeholder="عدد الأيام">
+  <input id="limit" type="number" placeholder="حد الاستخدام">
+  <button onclick="generate()">توليد</button>
+</div>
 
-  <div class="top">
-    <input id="name" placeholder="اسم المشترك (اختياري)">
-    <input id="days" type="number" placeholder="عدد الأيام">
-    <input id="limit" type="number" placeholder="حد الاستخدام">
-    <button onclick="generate()">توليد</button>
-  </div>
-
-  <table>
-    <thead>
-      <tr>
-        <th>الاسم</th>
-        <th>الكود</th>
-        <th>نسخ</th>
-        <th>الحالة</th>
-        <th>المدة المتبقية</th>
-        <th>تبديل</th>
-        <th>حذف</th>
-      </tr>
-    </thead>
-    <tbody id="codes"></tbody>
-  </table>
+<table>
+  <thead>
+    <tr>
+      <th>الاسم</th>
+      <th>الكود</th>
+      <th>نسخ</th>
+      <th>الحالة</th>
+      <th>المدة المتبقية</th>
+      <th>تبديل</th>
+      <th>حذف</th>
+    </tr>
+  </thead>
+  <tbody id="codes"></tbody>
+</table>
 
 <script>
 const API = location.origin;
-const token = localStorage.getItem("admin_token");
 
-if (!token) location.href = "/login.html";
+/* ✅ الاسم الصحيح */
+const token = localStorage.getItem("ADMIN_TOKEN");
+
+if (!token) {
+  location.href = "/login.html";
+}
 
 function logout() {
-  localStorage.removeItem("admin_token");
+  localStorage.removeItem("ADMIN_TOKEN");
   location.href = "/login.html";
 }
 

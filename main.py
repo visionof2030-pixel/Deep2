@@ -1,8 +1,9 @@
-from fastapi import FastAPI, HTTPException, Depends, Header
+from fastapi import FastAPI, HTTPException, Depends, Header, Body
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from pydantic import BaseModel
 from datetime import datetime, timedelta
+from pathlib import Path
 import os
 import itertools
 import google.generativeai as genai
@@ -11,7 +12,7 @@ from security import activation_required
 
 init_db()
 
-ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
 
 app = FastAPI()
 
@@ -23,10 +24,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# =========================
-# Models
-# =========================
-
 class AskReq(BaseModel):
     prompt: str
 
@@ -35,10 +32,6 @@ class GenerateKeyReq(BaseModel):
     usage_limit: int | None = None
     name: str | None = None
 
-# =========================
-# Gemini API rotation
-# =========================
-
 api_keys = [
     os.getenv("GEMINI_API_KEY_1"),
     os.getenv("GEMINI_API_KEY_2"),
@@ -46,24 +39,17 @@ api_keys = [
     os.getenv("GEMINI_API_KEY_4"),
     os.getenv("GEMINI_API_KEY_5"),
 ]
-
 api_keys = [k for k in api_keys if k]
 key_cycle = itertools.cycle(api_keys)
 
 def get_api_key():
+    if not api_keys:
+        raise HTTPException(status_code=500, detail="No API key")
     return next(key_cycle)
-
-# =========================
-# Admin Auth
-# =========================
 
 def admin_auth(x_admin_token: str = Header(...)):
     if x_admin_token != ADMIN_TOKEN:
         raise HTTPException(status_code=401, detail="Unauthorized")
-
-# =========================
-# Routes
-# =========================
 
 @app.get("/")
 def root():
@@ -79,10 +65,6 @@ def ask(req: AskReq, _: None = Depends(activation_required)):
     model = genai.GenerativeModel("models/gemini-2.5-flash-lite")
     res = model.generate_content(req.prompt)
     return {"answer": res.text}
-
-# =========================
-# Admin APIs
-# =========================
 
 @app.post("/admin/generate", dependencies=[Depends(admin_auth)])
 def admin_generate(req: GenerateKeyReq):
@@ -104,7 +86,6 @@ def admin_generate(req: GenerateKeyReq):
     )
     conn.commit()
     conn.close()
-
     return {"code": code}
 
 @app.get("/admin/codes", dependencies=[Depends(admin_auth)])
@@ -119,15 +100,12 @@ def admin_codes():
     rows = cur.fetchall()
     conn.close()
 
-    data = []
     now = datetime.utcnow()
-
+    data = []
     for r in rows:
-        expires = r[4]
         remaining = None
-        if expires:
-            remaining = max(0, (expires - now).days)
-
+        if r[4]:
+            remaining = max(0, (r[4] - now).days)
         data.append({
             "id": r[0],
             "code": r[1],
@@ -138,18 +116,13 @@ def admin_codes():
             "usage_limit": r[5],
             "usage_count": r[6],
         })
-
     return data
 
 @app.put("/admin/code/{code_id}/toggle", dependencies=[Depends(admin_auth)])
 def toggle_code(code_id: int):
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("""
-        UPDATE activation_codes
-        SET is_active = NOT is_active
-        WHERE id = %s
-    """, (code_id,))
+    cur.execute("UPDATE activation_codes SET is_active = NOT is_active WHERE id=%s", (code_id,))
     conn.commit()
     conn.close()
     return {"status": "ok"}
@@ -158,11 +131,27 @@ def toggle_code(code_id: int):
 def delete_code(code_id: int):
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("DELETE FROM activation_codes WHERE id = %s", (code_id,))
+    cur.execute("DELETE FROM activation_codes WHERE id=%s", (code_id,))
     conn.commit()
     conn.close()
     return {"status": "deleted"}
 
 @app.get("/admin", response_class=HTMLResponse)
 def admin_page():
-    return open("admin.html", encoding="utf-8").read()
+    return Path("admin.html").read_text(encoding="utf-8")
+
+@app.get("/login.html")
+def login_page():
+    return FileResponse("login.html")
+
+@app.get("/admin.js")
+def admin_js():
+    return FileResponse("admin.js")
+
+@app.get("/manifest.json")
+def manifest():
+    return FileResponse("manifest.json")
+
+@app.get("/sw.js")
+def sw():
+    return FileResponse("sw.js")

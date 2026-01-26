@@ -2,8 +2,8 @@ import uuid
 from datetime import datetime, timedelta
 from database import get_connection
 
-def create_key(days=None, usage_limit=None, customer_name=None):
-    code = str(uuid.uuid4()).upper().replace("-", "")[:16]
+def create_key(days=None, usage_limit=None, name=None):
+    code = uuid.uuid4().hex[:16].upper()
     expires_at = None
 
     if days:
@@ -11,14 +11,12 @@ def create_key(days=None, usage_limit=None, customer_name=None):
 
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute(
-        """
-        INSERT INTO activation_codes 
-        (code, customer_name, is_active, expires_at, usage_limit, usage_count)
+    cur.execute("""
+        INSERT INTO activation_codes
+        (code, name, is_active, expires_at, usage_limit, usage_count)
         VALUES (?, ?, 1, ?, ?, 0)
-        """,
-        (code, customer_name, expires_at, usage_limit)
-    )
+    """, (code, name, expires_at, usage_limit))
     conn.commit()
     conn.close()
-    return code
+
+    return {"code": code}

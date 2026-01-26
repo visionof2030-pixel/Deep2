@@ -90,23 +90,27 @@
 
 <script>
 const API = location.origin;
-
-/* ✅ الاسم الصحيح */
 const token = localStorage.getItem("ADMIN_TOKEN");
 
 if (!token) {
-  location.href = "/login.html";
+  location.href = "/static/login.html";
 }
 
 function logout() {
   localStorage.removeItem("ADMIN_TOKEN");
-  location.href = "/login.html";
+  location.href = "/static/login.html";
 }
 
 async function loadCodes() {
   const res = await fetch(API + "/admin/codes", {
     headers: { "x-admin-token": token }
   });
+
+  if (!res.ok) {
+    alert("خطأ في جلب الأكواد");
+    return;
+  }
+
   const data = await res.json();
   const table = document.getElementById("codes");
   table.innerHTML = "";
@@ -143,6 +147,11 @@ async function generate() {
       name: name || null
     })
   });
+
+  if (!res.ok) {
+    alert("فشل توليد الكود");
+    return;
+  }
 
   const data = await res.json();
   alert("تم توليد الكود:\n" + data.code);

@@ -8,18 +8,18 @@ def create_key(days=None, usage_limit=None):
     expires_at = None
 
     if days:
-        expires_at = (datetime.utcnow() + timedelta(days=days)).isoformat()
+        expires_at = datetime.utcnow() + timedelta(days=days)
 
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
         """
-        INSERT INTO activation_codes (code, is_active, expires_at, usage_limit, usage_count)
-        VALUES (?, 1, ?, ?, 0)
+        INSERT INTO activation_codes
+        (code, is_active, expires_at, usage_limit, usage_count)
+        VALUES ($1, $2, $3, $4, $5)
         """,
-        (code, expires_at, usage_limit)
+        (code, True, expires_at, usage_limit, 0)
     )
     conn.commit()
     conn.close()
-
     return code

@@ -1,46 +1,75 @@
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Admin Panel</title>
-<link rel="manifest" href="/manifest.json">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<style>
-body{font-family:tahoma;background:#020617;color:white;margin:0;padding:10px}
-input,button{padding:8px;margin:4px}
-button{background:#3b82f6;color:white;border:none;border-radius:6px}
-table{width:100%;border-collapse:collapse;font-size:12px}
-td,th{border:1px solid #334155;padding:6px;text-align:center}
-.top{display:flex;gap:5px;flex-wrap:wrap}
-</style>
-</head>
-<body>
+const API = location.origin;
+const token = localStorage.getItem("admin_token");
 
-<h3>لوحة التحكم</h3>
-<button onclick="logout()">تسجيل خروج</button>
+if (!token) {
+  location.href = "/login.html";
+}
 
-<div class="top">
-<input id="name" placeholder="اسم المشترك (اختياري)">
-<input id="days" type="number" placeholder="عدد الأيام">
-<input id="limit" type="number" placeholder="حد الاستخدام">
-<button onclick="generate()">توليد</button>
-</div>
+async function loadCodes() {
+  const res = await fetch(API + "/admin/codes", {
+    headers: { "x-admin-token": token }
+  });
+  const data = await res.json();
+  const table = document.getElementById("codes");
+  table.innerHTML = "";
 
-<table>
-<thead>
-<tr>
-<th>الاسم</th>
-<th>الكود</th>
-<th>نسخ</th>
-<th>الحالة</th>
-<th>المدة المتبقية</th>
-<th>حذف</th>
-</tr>
-</thead>
-<tbody id="rows"></tbody>
-</table>
+  data.forEach(c => {
+    table.innerHTML += `
+      <tr>
+        <td>${c.name || "-"}</td>
+        <td>${c.code}</td>
+        <td><button onclick="copyCode('${c.code}')">نسخ</button></td>
+        <td>${c.active ? "فعال" : "مغلق"}</td>
+        <td>${c.expires_at || "-"}</td>
+        <td><button onclick="toggle(${c.id})">تبديل</button></td>
+        <td><button onclick="del(${c.id})">حذف</button></td>
+      </tr>
+    `;
+  });
+}
 
-<script src="/admin.js"></script>
-</body>
-</html>
+async function generate() {
+  const days = document.getElementById("days").value;
+  const limit = document.getElementById("limit").value;
+  const name = document.getElementById("name").value;
+
+  const res = await fetch(API + "/admin/generate", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-admin-token": token
+    },
+    body: JSON.stringify({
+      expires_at: days ? parseInt(days) : null,
+      usage_limit: limit ? parseInt(limit) : null,
+      name: name || null
+    })
+  });
+
+  const data = await res.json();
+  alert("تم توليد الكود:\n" + data.code);
+  loadCodes();
+}
+
+async function toggle(id) {
+  await fetch(API + `/admin/code/${id}/toggle`, {
+    method: "PUT",
+    headers: { "x-admin-token": token }
+  });
+  loadCodes();
+}
+
+async function del(id) {
+  await fetch(API + `/admin/code/${id}`, {
+    method: "DELETE",
+    headers: { "x-admin-token": token }
+  });
+  loadCodes();
+}
+
+function copyCode(code) {
+  navigator.clipboard.writeText(code);
+  alert("تم النسخ");
+}
+
+loadCodes();

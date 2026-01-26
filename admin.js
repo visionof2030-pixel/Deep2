@@ -1,66 +1,75 @@
-const token = localStorage.getItem("ADMIN_TOKEN");
-if(!token) location.href="/login.html";
+const API = location.origin;
+const token = localStorage.getItem("admin_token");
 
-function headers(){
-  return {
-    "Content-Type":"application/json",
-    "x-admin-token": token
-  }
+if (!token) {
+  location.href = "/login.html";
 }
 
-async function load(){
-  const r = await fetch("/admin/codes",{headers:headers()});
-  if(r.status===401){logout();return}
-  const data = await r.json();
-  const rows = document.getElementById("rows");
-  rows.innerHTML="";
-  data.forEach(c=>{
-    rows.innerHTML+=`
+async function loadCodes() {
+  const res = await fetch(API + "/admin/codes", {
+    headers: { "x-admin-token": token }
+  });
+  const data = await res.json();
+  const table = document.getElementById("codes");
+  table.innerHTML = "";
+
+  data.forEach(c => {
+    table.innerHTML += `
       <tr>
-        <td>${c.name||""}</td>
+        <td>${c.name || "-"}</td>
         <td>${c.code}</td>
-        <td><button onclick="copy('${c.code}')">📋</button></td>
-        <td><button onclick="toggle(${c.id})">${c.active?"🟢":"🔴"}</button></td>
-        <td>${c.remaining_days ?? "-"}</td>
-        <td><button onclick="del(${c.id})">❌</button></td>
+        <td><button onclick="copyCode('${c.code}')">نسخ</button></td>
+        <td>${c.active ? "فعال" : "مغلق"}</td>
+        <td>${c.expires_at || "-"}</td>
+        <td><button onclick="toggle(${c.id})">تبديل</button></td>
+        <td><button onclick="del(${c.id})">حذف</button></td>
       </tr>
-    `
-  })
+    `;
+  });
 }
 
-async function generate(){
-  await fetch("/admin/generate",{
-    method:"POST",
-    headers:headers(),
-    body:JSON.stringify({
-      name: name.value || null,
-      days: days.value ? parseInt(days.value):null,
-      usage_limit: limit.value ? parseInt(limit.value):null
+async function generate() {
+  const days = document.getElementById("days").value;
+  const limit = document.getElementById("limit").value;
+  const name = document.getElementById("name").value;
+
+  const res = await fetch(API + "/admin/generate", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-admin-token": token
+    },
+    body: JSON.stringify({
+      expires_at: days ? parseInt(days) : null,
+      usage_limit: limit ? parseInt(limit) : null,
+      name: name || null
     })
-  })
-  load()
+  });
+
+  const data = await res.json();
+  alert("تم توليد الكود:\n" + data.code);
+  loadCodes();
 }
 
-function copy(t){navigator.clipboard.writeText(t)}
-
-async function toggle(id){
-  await fetch(`/admin/code/${id}/toggle`,{method:"PUT",headers:headers()})
-  load()
+async function toggle(id) {
+  await fetch(API + `/admin/code/${id}/toggle`, {
+    method: "PUT",
+    headers: { "x-admin-token": token }
+  });
+  loadCodes();
 }
 
-async function del(id){
-  if(!confirm("حذف؟"))return
-  await fetch(`/admin/code/${id}`,{method:"DELETE",headers:headers()})
-  load()
+async function del(id) {
+  await fetch(API + `/admin/code/${id}`, {
+    method: "DELETE",
+    headers: { "x-admin-token": token }
+  });
+  loadCodes();
 }
 
-function logout(){
-  localStorage.removeItem("ADMIN_TOKEN");
-  location.href="/login.html";
+function copyCode(code) {
+  navigator.clipboard.writeText(code);
+  alert("تم النسخ");
 }
 
-if("serviceWorker" in navigator){
-  navigator.serviceWorker.register("/sw.js");
-}
-
-load()
+loadCodes();

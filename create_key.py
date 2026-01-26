@@ -1,4 +1,3 @@
-# create_key.py
 import uuid
 from datetime import datetime, timedelta
 from database import get_connection
@@ -16,7 +15,7 @@ def create_key(days=None, usage_limit=None):
         """
         INSERT INTO activation_codes
         (code, is_active, expires_at, usage_limit, usage_count)
-        VALUES ($1, $2, $3, $4, $5)
+        VALUES (%s, %s, %s, %s, %s)
         """,
         (code, True, expires_at, usage_limit, 0)
     )

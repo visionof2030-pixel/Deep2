@@ -15,7 +15,7 @@ def create_key(days=None, usage_limit=None, name=None):
     cur.execute("""
         INSERT INTO activation_codes
         (code, name, is_active, expires_at, usage_limit, usage_count)
-        VALUES (%s, %s, TRUE, %s, %s, 0)
+        VALUES (%s, %s, true, %s, %s, 0)
         RETURNING code
     """, (code, name, expires_at, usage_limit))
 

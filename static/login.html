@@ -6,18 +6,41 @@
 <title>تسجيل دخول الأدمن</title>
 <link rel="manifest" href="/manifest.json">
 <style>
-body{font-family:tahoma;background:#0f172a;color:white;display:flex;align-items:center;justify-content:center;height:100vh}
-.box{background:#1e293b;padding:25px;border-radius:10px;width:90%;max-width:350px}
-input,button{width:100%;padding:10px;margin-top:10px}
-button{background:#22c55e;border:none;color:black;font-weight:bold}
+body{
+  font-family:tahoma;
+  background:#0f172a;
+  color:white;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  height:100vh
+}
+.box{
+  background:#1e293b;
+  padding:25px;
+  border-radius:10px;
+  width:90%;
+  max-width:350px
+}
+input,button{
+  width:100%;
+  padding:10px;
+  margin-top:10px
+}
+button{
+  background:#22c55e;
+  border:none;
+  color:black;
+  font-weight:bold
+}
 </style>
 </head>
 <body>
 
 <div class="box">
-<h3>دخول الأدمن</h3>
-<input id="token" placeholder="ADMIN TOKEN">
-<button onclick="login()">دخول</button>
+  <h3>دخول الأدمن</h3>
+  <input id="token" placeholder="ADMIN TOKEN">
+  <button onclick="login()">دخول</button>
 </div>
 
 <script>
@@ -25,7 +48,7 @@ function login(){
   const t = document.getElementById("token").value.trim();
   if(!t) return alert("ادخل التوكن");
   localStorage.setItem("ADMIN_TOKEN", t);
-  location.href="/static/admin.html";
+  location.href = "/static/admin.html";
 }
 </script>
 

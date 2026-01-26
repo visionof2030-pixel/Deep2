@@ -23,7 +23,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ✅ static
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 class Req(BaseModel):
@@ -47,12 +46,10 @@ def admin_auth(x_admin_token: str = Header(...)):
     if x_admin_token != ADMIN_TOKEN:
         raise HTTPException(401, "Unauthorized")
 
-# ✅ الصفحة الرئيسية
 @app.get("/")
 def root():
     return FileResponse("static/login.html")
 
-# ✅ admin page
 @app.get("/admin", response_class=HTMLResponse)
 def admin_page():
     return FileResponse("static/admin.html")
@@ -104,8 +101,8 @@ def toggle(code_id: int):
     cur = conn.cursor()
     cur.execute("""
         UPDATE activation_codes
-        SET is_active = CASE WHEN is_active=1 THEN 0 ELSE 1 END
-        WHERE id=?
+        SET is_active = CASE WHEN is_active=true THEN false ELSE true END
+        WHERE id=%s
     """, (code_id,))
     conn.commit()
     conn.close()
@@ -115,7 +112,7 @@ def toggle(code_id: int):
 def delete(code_id: int):
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("DELETE FROM activation_codes WHERE id=?", (code_id,))
+    cur.execute("DELETE FROM activation_codes WHERE id=%s", (code_id,))
     conn.commit()
     conn.close()
     return {"status": "deleted"}

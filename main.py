@@ -1,3 +1,4 @@
+# main.py
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
@@ -7,7 +8,7 @@ import itertools
 import google.generativeai as genai
 from database import init_db, get_connection
 from create_key import create_key
-from security import activation_required
+from security import activation_required, validate_code
 
 try:
     init_db()
@@ -28,6 +29,9 @@ app.add_middleware(
 
 class Req(BaseModel):
     prompt: str
+
+class ActivateReq(BaseModel):
+    code: str
 
 class GenerateKeyReq(BaseModel):
     expires_at: int | None = None
@@ -59,11 +63,12 @@ def root():
     return {"status": "running"}
 
 @app.get("/health")
-def health(_: None = Depends(activation_required)):
+def health():
     return {"status": "ok"}
 
 @app.post("/activate")
-def activate(_: None = Depends(activation_required)):
+def activate(req: ActivateReq):
+    validate_code(req.code)
     return {"status": "activated"}
 
 @app.post("/ask")

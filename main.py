@@ -1,4 +1,3 @@
-# main.py
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
@@ -60,7 +59,7 @@ def root():
     return {"status": "running"}
 
 @app.get("/health")
-def health():
+def health(_: None = Depends(activation_required)):
     return {"status": "ok"}
 
 @app.post("/activate")

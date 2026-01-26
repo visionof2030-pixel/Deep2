@@ -11,11 +11,13 @@ def create_key(days=None, usage_limit=None, name=None):
 
     conn = get_connection()
     cur = conn.cursor()
+
     cur.execute("""
         INSERT INTO activation_codes
         (code, name, is_active, expires_at, usage_limit, usage_count)
         VALUES (%s, %s, TRUE, %s, %s, 0)
     """, (code, name, expires_at, usage_limit))
+
     conn.commit()
     conn.close()
     return code

@@ -1,4 +1,3 @@
-# security.py
 from fastapi import Header, HTTPException
 from database import get_connection
 from datetime import datetime
@@ -10,7 +9,7 @@ def activation_required(x_activation_code: str = Header(...)):
     cur.execute("""
         SELECT id, is_active, expires_at, usage_limit, usage_count
         FROM activation_codes
-        WHERE code=$1
+        WHERE code=%s
     """, (x_activation_code,))
     row = cur.fetchone()
 
@@ -33,7 +32,7 @@ def activation_required(x_activation_code: str = Header(...)):
         raise HTTPException(status_code=401, detail="Usage limit reached")
 
     cur.execute(
-        "UPDATE activation_codes SET usage_count = usage_count + 1 WHERE id=$1",
+        "UPDATE activation_codes SET usage_count = usage_count + 1 WHERE id=%s",
         (code_id,)
     )
     conn.commit()

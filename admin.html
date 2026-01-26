@@ -1,69 +1,106 @@
 <!DOCTYPE html>
-<html lang="ar">
+<html lang="ar" dir="rtl">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="utf-8">
+<title>لوحة التحكم</title>
 <link rel="manifest" href="/manifest.json">
-<title>Admin Panel</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
 <style>
-body{font-family:system-ui;background:#0f172a;color:white;padding:15px}
-table{width:100%;border-collapse:collapse}
-td,th{border:1px solid #334155;padding:6px;text-align:center}
-button{padding:5px 8px}
+body{background:#0f172a;color:white;font-family:tahoma}
+input,button{padding:8px;margin:4px}
+table{width:100%;margin-top:10px}
+td,th{border:1px solid #334;padding:6px;text-align:center}
 </style>
 </head>
 <body>
 
 <h2>لوحة التحكم</h2>
 
+<div id="login">
+<input id="token" placeholder="ADMIN TOKEN">
+<button onclick="login()">دخول</button>
+</div>
+
+<div id="panel" style="display:none">
 <input id="name" placeholder="اسم المشترك">
-<input id="days" placeholder="مدة (أيام)">
+<input id="days" placeholder="المدة بالأيام">
 <button onclick="generate()">توليد كود</button>
 
-<table id="tbl">
-<tr><th>اسم</th><th>الكود</th><th>نسخ</th><th>حالة</th><th>حذف</th></tr>
+<table>
+<thead>
+<tr>
+<th>الاسم</th><th>الكود</th><th>نسخ</th><th>حالة</th><th>حذف</th>
+</tr>
+</thead>
+<tbody id="rows"></tbody>
 </table>
+</div>
 
 <script>
-const token = localStorage.getItem("ADMIN_TOKEN") || prompt("ادخل ADMIN TOKEN")
-localStorage.setItem("ADMIN_TOKEN", token)
+let token = localStorage.getItem("ADMIN_TOKEN");
+
+if(token){showPanel()}
+
+function login(){
+  token = document.getElementById("token").value;
+  localStorage.setItem("ADMIN_TOKEN", token);
+  showPanel();
+}
+
+function showPanel(){
+  document.getElementById("login").style.display="none";
+  document.getElementById("panel").style.display="block";
+  load();
+}
+
+function headers(){
+  return {"x-admin-token":token,"Content-Type":"application/json"}
+}
+
+async function load(){
+  const r = await fetch("/admin/codes",{headers:headers()});
+  const data = await r.json();
+  const rows = document.getElementById("rows");
+  rows.innerHTML="";
+  data.forEach(c=>{
+    rows.innerHTML+=`
+    <tr>
+      <td>${c.name||""}</td>
+      <td>${c.code}</td>
+      <td><button onclick="copy('${c.code}')">نسخ</button></td>
+      <td><button onclick="toggle(${c.id})">${c.active?"فعال":"موقوف"}</button></td>
+      <td><button onclick="del(${c.id})">❌</button></td>
+    </tr>`;
+  });
+}
 
 async function generate(){
   await fetch("/admin/generate",{
     method:"POST",
-    headers:{
-      "Content-Type":"application/json",
-      "x-admin-token":token
-    },
+    headers:headers(),
     body:JSON.stringify({
-      customer_name:name.value,
-      days:days.value
+      name:document.getElementById("name").value,
+      days:parseInt(document.getElementById("days").value)
     })
-  })
-  load()
+  });
+  load();
 }
 
-async function load(){
-  const res = await fetch("/admin/codes",{headers:{"x-admin-token":token}})
-  const data = await res.json()
-  tbl.innerHTML = `<tr><th>اسم</th><th>الكود</th><th>نسخ</th><th>حالة</th><th>حذف</th></tr>`
-  data.forEach(r=>{
-    tbl.innerHTML+=`
-    <tr>
-      <td>${r[2]||""}</td>
-      <td>${r[1]}</td>
-      <td><button onclick="copy('${r[1]}')">📋</button></td>
-      <td><button onclick="toggle(${r[0]})">${r[3]?'🟢':'🔴'}</button></td>
-      <td><button onclick="del(${r[0]})">❌</button></td>
-    </tr>`
-  })
+function copy(t){navigator.clipboard.writeText(t)}
+
+async function toggle(id){
+  await fetch(`/admin/code/${id}/toggle`,{method:"PUT",headers:headers()});
+  load();
 }
 
-function copy(c){navigator.clipboard.writeText(c)}
-function toggle(id){fetch(`/admin/code/${id}/toggle`,{method:"PUT",headers:{"x-admin-token":token}}).then(load)}
-function del(id){fetch(`/admin/code/${id}`,{method:"DELETE",headers:{"x-admin-token":token}}).then(load)}
+async function del(id){
+  await fetch(`/admin/code/${id}`,{method:"DELETE",headers:headers()});
+  load();
+}
 
-load()
+if("serviceWorker"in navigator){
+  navigator.serviceWorker.register("/sw.js");
+}
 </script>
 </body>
 </html>

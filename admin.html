@@ -1,106 +1,46 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<meta charset="utf-8">
-<title>لوحة التحكم</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Admin Panel</title>
 <link rel="manifest" href="/manifest.json">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <style>
-body{background:#0f172a;color:white;font-family:tahoma}
+body{font-family:tahoma;background:#020617;color:white;margin:0;padding:10px}
 input,button{padding:8px;margin:4px}
-table{width:100%;margin-top:10px}
-td,th{border:1px solid #334;padding:6px;text-align:center}
+button{background:#3b82f6;color:white;border:none;border-radius:6px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+td,th{border:1px solid #334155;padding:6px;text-align:center}
+.top{display:flex;gap:5px;flex-wrap:wrap}
 </style>
 </head>
 <body>
 
-<h2>لوحة التحكم</h2>
+<h3>لوحة التحكم</h3>
+<button onclick="logout()">تسجيل خروج</button>
 
-<div id="login">
-<input id="token" placeholder="ADMIN TOKEN">
-<button onclick="login()">دخول</button>
+<div class="top">
+<input id="name" placeholder="اسم المشترك (اختياري)">
+<input id="days" type="number" placeholder="عدد الأيام">
+<input id="limit" type="number" placeholder="حد الاستخدام">
+<button onclick="generate()">توليد</button>
 </div>
-
-<div id="panel" style="display:none">
-<input id="name" placeholder="اسم المشترك">
-<input id="days" placeholder="المدة بالأيام">
-<button onclick="generate()">توليد كود</button>
 
 <table>
 <thead>
 <tr>
-<th>الاسم</th><th>الكود</th><th>نسخ</th><th>حالة</th><th>حذف</th>
+<th>الاسم</th>
+<th>الكود</th>
+<th>نسخ</th>
+<th>الحالة</th>
+<th>المدة المتبقية</th>
+<th>حذف</th>
 </tr>
 </thead>
 <tbody id="rows"></tbody>
 </table>
-</div>
 
-<script>
-let token = localStorage.getItem("ADMIN_TOKEN");
-
-if(token){showPanel()}
-
-function login(){
-  token = document.getElementById("token").value;
-  localStorage.setItem("ADMIN_TOKEN", token);
-  showPanel();
-}
-
-function showPanel(){
-  document.getElementById("login").style.display="none";
-  document.getElementById("panel").style.display="block";
-  load();
-}
-
-function headers(){
-  return {"x-admin-token":token,"Content-Type":"application/json"}
-}
-
-async function load(){
-  const r = await fetch("/admin/codes",{headers:headers()});
-  const data = await r.json();
-  const rows = document.getElementById("rows");
-  rows.innerHTML="";
-  data.forEach(c=>{
-    rows.innerHTML+=`
-    <tr>
-      <td>${c.name||""}</td>
-      <td>${c.code}</td>
-      <td><button onclick="copy('${c.code}')">نسخ</button></td>
-      <td><button onclick="toggle(${c.id})">${c.active?"فعال":"موقوف"}</button></td>
-      <td><button onclick="del(${c.id})">❌</button></td>
-    </tr>`;
-  });
-}
-
-async function generate(){
-  await fetch("/admin/generate",{
-    method:"POST",
-    headers:headers(),
-    body:JSON.stringify({
-      name:document.getElementById("name").value,
-      days:parseInt(document.getElementById("days").value)
-    })
-  });
-  load();
-}
-
-function copy(t){navigator.clipboard.writeText(t)}
-
-async function toggle(id){
-  await fetch(`/admin/code/${id}/toggle`,{method:"PUT",headers:headers()});
-  load();
-}
-
-async function del(id){
-  await fetch(`/admin/code/${id}`,{method:"DELETE",headers:headers()});
-  load();
-}
-
-if("serviceWorker"in navigator){
-  navigator.serviceWorker.register("/sw.js");
-}
-</script>
+<script src="/admin.js"></script>
 </body>
 </html>

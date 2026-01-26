@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from pydantic import BaseModel
 import os
 import itertools
@@ -55,6 +55,10 @@ def admin_auth(x_admin_token: str = Header(...)):
 def root():
     return {"status": "running"}
 
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
 @app.post("/activate")
 def activate(_: None = Depends(activation_required)):
     return {"status": "activated"}
@@ -69,3 +73,63 @@ def ask(req: Req, _: None = Depends(activation_required)):
 @app.post("/admin/generate", dependencies=[Depends(admin_auth)])
 def admin_generate(req: GenerateKeyReq):
     return {"code": create_key(req.expires_at, req.usage_limit)}
+
+@app.get("/admin/codes", dependencies=[Depends(admin_auth)])
+def admin_codes():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, code, is_active, expires_at, usage_limit, usage_count
+        FROM activation_codes
+        ORDER BY id DESC
+    """)
+    rows = cur.fetchall()
+    conn.close()
+    return [
+        {
+            "id": r[0],
+            "code": r[1],
+            "active": r[2],
+            "expires_at": r[3],
+            "usage_limit": r[4],
+            "usage_count": r[5],
+        }
+        for r in rows
+    ]
+
+@app.put("/admin/code/{code_id}/toggle", dependencies=[Depends(admin_auth)])
+def admin_toggle(code_id: int):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE activation_codes SET is_active = NOT is_active WHERE id=%s",
+        (code_id,)
+    )
+    conn.commit()
+    conn.close()
+    return {"status": "ok"}
+
+@app.delete("/admin/code/{code_id}", dependencies=[Depends(admin_auth)])
+def admin_delete(code_id: int):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM activation_codes WHERE id=%s", (code_id,))
+    conn.commit()
+    conn.close()
+    return {"status": "deleted"}
+
+@app.get("/admin/panel", dependencies=[Depends(admin_auth)])
+def admin_panel():
+    return FileResponse("admin.html")
+
+@app.get("/manifest.json")
+def manifest():
+    return FileResponse("manifest.json")
+
+@app.get("/sw.js")
+def sw():
+    return FileResponse("sw.js")
+
+@app.get("/admin", response_class=HTMLResponse)
+def admin_page():
+    return "<h3>Admin Panel Ready</h3>"

@@ -1,26 +1,30 @@
-# database.py
 import os
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
-DB_PATH = "/tmp/database.db"
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 def get_connection():
-    return sqlite3.connect(DB_PATH, check_same_thread=False)
+    return psycopg2.connect(
+        DATABASE_URL,
+        cursor_factory=RealDictCursor
+    )
 
 def init_db():
-    os.makedirs("/tmp", exist_ok=True)
     conn = get_connection()
     cur = conn.cursor()
+
     cur.execute("""
     CREATE TABLE IF NOT EXISTS activation_codes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        code TEXT UNIQUE,
-        is_active INTEGER,
-        created_at TEXT,
-        expires_at TEXT,
+        id SERIAL PRIMARY KEY,
+        code TEXT UNIQUE NOT NULL,
+        is_active BOOLEAN DEFAULT TRUE,
         usage_limit INTEGER,
-        usage_count INTEGER,
-        last_used_at TEXT
+        usage_count INTEGER DEFAULT 0,
+        expires_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW()
     )
     """)
+
     conn.commit()
     conn.close()

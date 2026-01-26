@@ -1,5 +1,4 @@
 # database.py
-import sqlite3
 import os
 
 DB_PATH = "/tmp/database.db"

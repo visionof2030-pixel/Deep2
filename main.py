@@ -6,12 +6,14 @@ from pydantic import BaseModel
 import os
 import itertools
 import google.generativeai as genai
-
 from database import init_db, get_connection
 from create_key import create_key
 from security import activation_required
 
-init_db()
+try:
+    init_db()
+except Exception as e:
+    print("DB INIT ERROR:", e)
 
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
 
@@ -29,7 +31,7 @@ class Req(BaseModel):
     prompt: str
 
 class GenerateKeyReq(BaseModel):
-    days: int | None = None
+    expires_at: int | None = None
     usage_limit: int | None = None
 
 api_keys = [
@@ -58,8 +60,12 @@ def root():
     return {"status": "running"}
 
 @app.get("/health")
-def health(_: None = Depends(activation_required)):
+def health():
     return {"status": "ok"}
+
+@app.post("/activate")
+def activate(_: None = Depends(activation_required)):
+    return {"status": "activated"}
 
 @app.post("/ask")
 def ask(req: Req, _: None = Depends(activation_required)):
@@ -70,17 +76,26 @@ def ask(req: Req, _: None = Depends(activation_required)):
 
 @app.post("/admin/generate", dependencies=[Depends(admin_auth)])
 def admin_generate(req: GenerateKeyReq):
-    return {"code": create_key(req.days, req.usage_limit)}
+    return {"code": create_key(req.expires_at, req.usage_limit)}
 
 @app.get("/admin/codes", dependencies=[Depends(admin_auth)])
 def admin_codes():
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("SELECT id, code, is_active, usage_count FROM activation_codes ORDER BY id DESC")
+    cur.execute(
+        "SELECT id, code, is_active, expires_at, usage_limit, usage_count FROM activation_codes"
+    )
     rows = cur.fetchall()
     conn.close()
     return [
-        {"id": r[0], "code": r[1], "active": r[2], "usage": r[3]}
+        {
+            "id": r[0],
+            "code": r[1],
+            "active": bool(r[2]),
+            "expires_at": r[3],
+            "usage_limit": r[4],
+            "usage_count": r[5],
+        }
         for r in rows
     ]
 
@@ -89,8 +104,8 @@ def admin_toggle(code_id: int):
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
-        "UPDATE activation_codes SET is_active = NOT is_active WHERE id = %s",
-        (code_id,)
+        "UPDATE activation_codes SET is_active = CASE WHEN is_active=1 THEN 0 ELSE 1 END WHERE id=?",
+        (code_id,),
     )
     conn.commit()
     conn.close()
@@ -100,7 +115,7 @@ def admin_toggle(code_id: int):
 def admin_delete(code_id: int):
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("DELETE FROM activation_codes WHERE id = %s", (code_id,))
+    cur.execute("DELETE FROM activation_codes WHERE id=?", (code_id,))
     conn.commit()
     conn.close()
     return {"status": "deleted"}

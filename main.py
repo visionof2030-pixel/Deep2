@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse
 from pydantic import BaseModel
+from pathlib import Path
 import os
 import itertools
 import google.generativeai as genai
@@ -78,18 +79,16 @@ def admin_generate(req: GenerateKeyReq):
 def admin_codes():
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("""
-        SELECT id, code, is_active, expires_at, usage_limit, usage_count
-        FROM activation_codes
-        ORDER BY id DESC
-    """)
+    cur.execute(
+        "SELECT id, code, is_active, expires_at, usage_limit, usage_count FROM activation_codes"
+    )
     rows = cur.fetchall()
     conn.close()
     return [
         {
             "id": r[0],
             "code": r[1],
-            "active": r[2],
+            "active": bool(r[2]),
             "expires_at": r[3],
             "usage_limit": r[4],
             "usage_count": r[5],
@@ -102,8 +101,8 @@ def admin_toggle(code_id: int):
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
-        "UPDATE activation_codes SET is_active = NOT is_active WHERE id=%s",
-        (code_id,)
+        "UPDATE activation_codes SET is_active = CASE WHEN is_active=1 THEN 0 ELSE 1 END WHERE id=?",
+        (code_id,),
     )
     conn.commit()
     conn.close()
@@ -113,23 +112,19 @@ def admin_toggle(code_id: int):
 def admin_delete(code_id: int):
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("DELETE FROM activation_codes WHERE id=%s", (code_id,))
+    cur.execute("DELETE FROM activation_codes WHERE id=?", (code_id,))
     conn.commit()
     conn.close()
     return {"status": "deleted"}
 
-@app.get("/admin/panel", dependencies=[Depends(admin_auth)])
-def admin_panel():
-    return FileResponse("admin.html")
+@app.get("/admin", response_class=HTMLResponse)
+def admin_page():
+    return Path("admin.html").read_text(encoding="utf-8")
 
 @app.get("/manifest.json")
 def manifest():
     return FileResponse("manifest.json")
 
 @app.get("/sw.js")
-def sw():
+def service_worker():
     return FileResponse("sw.js")
-
-@app.get("/admin", response_class=HTMLResponse)
-def admin_page():
-    return "<h3>Admin Panel Ready</h3>"

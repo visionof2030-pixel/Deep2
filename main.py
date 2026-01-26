@@ -1,9 +1,11 @@
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import os, itertools
 import google.generativeai as genai
+
 from database import init_db, get_connection
 from create_key import create_key
 from security import activation_required
@@ -20,6 +22,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ✅ static
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 class Req(BaseModel):
     prompt: str
@@ -42,9 +47,15 @@ def admin_auth(x_admin_token: str = Header(...)):
     if x_admin_token != ADMIN_TOKEN:
         raise HTTPException(401, "Unauthorized")
 
+# ✅ الصفحة الرئيسية
 @app.get("/")
 def root():
-    return {"status": "running"}
+    return FileResponse("static/login.html")
+
+# ✅ admin page
+@app.get("/admin", response_class=HTMLResponse)
+def admin_page():
+    return FileResponse("static/admin.html")
 
 @app.post("/activate")
 def activate(_: None = Depends(activation_required)):
@@ -108,7 +119,3 @@ def delete(code_id: int):
     conn.commit()
     conn.close()
     return {"status": "deleted"}
-
-@app.get("/admin", response_class=HTMLResponse)
-def admin_page():
-    return open("admin.html", encoding="utf-8").read()

@@ -1,14 +1,24 @@
 const API = location.origin;
-const token = localStorage.getItem("admin_token");
 
+/* التوكن الصحيح (متطابق مع login.html) */
+const token = localStorage.getItem("ADMIN_TOKEN");
+
+/* لو مافي توكن يرجع لصفحة الدخول */
 if (!token) {
-  location.href = "/login.html";
+  location.href = "/static/login.html";
 }
 
+/* تحميل الأكواد */
 async function loadCodes() {
   const res = await fetch(API + "/admin/codes", {
     headers: { "x-admin-token": token }
   });
+
+  if (!res.ok) {
+    alert("فشل جلب الأكواد");
+    return;
+  }
+
   const data = await res.json();
   const table = document.getElementById("codes");
   table.innerHTML = "";
@@ -21,13 +31,14 @@ async function loadCodes() {
         <td><button onclick="copyCode('${c.code}')">نسخ</button></td>
         <td>${c.active ? "فعال" : "مغلق"}</td>
         <td>${c.expires_at || "-"}</td>
-        <td><button onclick="toggle(${c.id})">تبديل</button></td>
-        <td><button onclick="del(${c.id})">حذف</button></td>
+        <td><button onclick="toggleCode(${c.id})">تبديل</button></td>
+        <td><button onclick="deleteCode(${c.id})">حذف</button></td>
       </tr>
     `;
   });
 }
 
+/* توليد كود */
 async function generate() {
   const days = document.getElementById("days").value;
   const limit = document.getElementById("limit").value;
@@ -46,12 +57,18 @@ async function generate() {
     })
   });
 
+  if (!res.ok) {
+    alert("فشل توليد الكود");
+    return;
+  }
+
   const data = await res.json();
   alert("تم توليد الكود:\n" + data.code);
   loadCodes();
 }
 
-async function toggle(id) {
+/* تفعيل / تعطيل */
+async function toggleCode(id) {
   await fetch(API + `/admin/code/${id}/toggle`, {
     method: "PUT",
     headers: { "x-admin-token": token }
@@ -59,7 +76,10 @@ async function toggle(id) {
   loadCodes();
 }
 
-async function del(id) {
+/* حذف */
+async function deleteCode(id) {
+  if (!confirm("هل أنت متأكد من الحذف؟")) return;
+
   await fetch(API + `/admin/code/${id}`, {
     method: "DELETE",
     headers: { "x-admin-token": token }
@@ -67,9 +87,16 @@ async function del(id) {
   loadCodes();
 }
 
+/* نسخ */
 function copyCode(code) {
   navigator.clipboard.writeText(code);
   alert("تم النسخ");
+}
+
+/* تسجيل خروج */
+function logout() {
+  localStorage.removeItem("ADMIN_TOKEN");
+  location.href = "/static/login.html";
 }
 
 loadCodes();

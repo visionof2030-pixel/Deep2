@@ -4,21 +4,22 @@ import psycopg2
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 def get_connection():
-    return psycopg2.connect(DATABASE_URL)
+    return psycopg2.connect(DATABASE_URL, sslmode="require")
 
 def init_db():
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS activation_codes (
-            id SERIAL PRIMARY KEY,
-            code TEXT UNIQUE NOT NULL,
-            name TEXT,
-            is_active BOOLEAN DEFAULT TRUE,
-            expires_at TIMESTAMP,
-            usage_limit INTEGER,
-            usage_count INTEGER DEFAULT 0
-        )
+    CREATE TABLE IF NOT EXISTS activation_codes (
+        id SERIAL PRIMARY KEY,
+        code TEXT UNIQUE NOT NULL,
+        name TEXT,
+        is_active BOOLEAN DEFAULT TRUE,
+        expires_at TIMESTAMP,
+        usage_limit INTEGER,
+        usage_count INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT NOW()
+    )
     """)
     conn.commit()
     conn.close()

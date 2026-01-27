@@ -8,28 +8,23 @@ def activation_required(x_activation_code: str = Header(...)):
 
     cur.execute("""
         SELECT id, is_active, expires_at, usage_limit, usage_count
-        FROM activation_codes
-        WHERE code=%s
+        FROM activation_codes WHERE code=%s
     """, (x_activation_code,))
     row = cur.fetchone()
 
     if not row:
-        conn.close()
         raise HTTPException(401, "Invalid code")
 
     code_id, active, expires, limit, used = row
 
     if not active:
-        conn.close()
-        raise HTTPException(401, "Code disabled")
+        raise HTTPException(401, "Disabled")
 
     if expires and expires < datetime.utcnow():
-        conn.close()
-        raise HTTPException(401, "Code expired")
+        raise HTTPException(401, "Expired")
 
     if limit and used >= limit:
-        conn.close()
-        raise HTTPException(401, "Usage limit reached")
+        raise HTTPException(401, "Limit reached")
 
     cur.execute(
         "UPDATE activation_codes SET usage_count = usage_count + 1 WHERE id=%s",

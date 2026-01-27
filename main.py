@@ -1,48 +1,11 @@
-from fastapi import FastAPI, HTTPException, Depends
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-import os
-import itertools
-import google.generativeai as genai
-
-from database import init_db, get_connection
-from create_key import create_key
-from security import activation_required
-
-init_db()
+from fastapi import FastAPI
 
 app = FastAPI()
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-class AskReq(BaseModel):
-    prompt: str
-
-api_keys = [os.getenv(f"GEMINI_API_KEY_{i}") for i in range(1, 8)]
-api_keys = [k for k in api_keys if k]
-key_cycle = itertools.cycle(api_keys) if api_keys else None
-
-def get_api_key():
-    if not key_cycle:
-        raise HTTPException(500, "No Gemini API keys configured")
-    return next(key_cycle)
 
 @app.get("/")
 def health():
     return {"status": "ok"}
 
-@app.post("/activate")
-def activate(_: None = Depends(activation_required)):
-    return {"status": "activated"}
-
-@app.post("/ask")
-def ask(req: AskReq, _: None = Depends(activation_required)):
-    genai.configure(api_key=get_api_key())
-    model = genai.GenerativeModel("models/gemini-2.5-flash-lite")
-    r = model.generate_content(req.prompt)
-    return {"answer": r.text}
+@app.get("/health")
+def health2():
+    return {"server": "running"}

@@ -1,5 +1,4 @@
+# requirements.txt
 fastapi
 uvicorn
 gunicorn
-google-generativeai
-psycopg2-binary

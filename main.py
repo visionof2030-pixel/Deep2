@@ -1,3 +1,4 @@
+# main.py
 from fastapi import FastAPI
 
 app = FastAPI()
@@ -8,4 +9,4 @@ def root():
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {"ok": True}

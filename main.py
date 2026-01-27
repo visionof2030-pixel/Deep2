@@ -7,7 +7,7 @@ from security import activation_required
 app = FastAPI()
 
 try:
-    init_db()
+    
 except Exception as e:
     print("DB ERROR:", e)
 

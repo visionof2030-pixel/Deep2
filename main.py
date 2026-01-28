@@ -1,4 +1,3 @@
-# main.py
 from fastapi import FastAPI
 from pydantic import BaseModel
 import os
@@ -17,5 +16,5 @@ def root():
 def ask(req: Req):
     genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
     model = genai.GenerativeModel("models/gemini-2.5-flash-lite")
-    r = model.generate_content(req.prompt)
-    return {"answer": r.text}
+    response = model.generate_content(req.prompt)
+    return {"answer": response.text}

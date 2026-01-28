@@ -1,26 +1,35 @@
-import os
-import psycopg2
+import sqlite3
+from datetime import datetime
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+DB = "data.db"
 
 def get_connection():
-    if not DATABASE_URL:
-        raise Exception("DATABASE_URL not set")
-    return psycopg2.connect(DATABASE_URL)
+    return sqlite3.connect(DB)
 
 def init_db():
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS activation_codes (
-            id SERIAL PRIMARY KEY,
-            code TEXT UNIQUE NOT NULL,
-            name TEXT,
-            is_active BOOLEAN DEFAULT TRUE,
-            expires_at TIMESTAMP NULL,
-            usage_limit INTEGER NULL,
-            usage_count INTEGER DEFAULT 0
-        )
+    CREATE TABLE IF NOT EXISTS passwords (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        password TEXT UNIQUE,
+        expires_at TEXT
+    )
     """)
     conn.commit()
     conn.close()
+
+def is_valid_password(pw: str):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT expires_at FROM passwords WHERE password=?",
+        (pw,)
+    )
+    row = cur.fetchone()
+    conn.close()
+
+    if not row:
+        return False
+
+    return datetime.utcnow() < datetime.fromisoformat(row[0])

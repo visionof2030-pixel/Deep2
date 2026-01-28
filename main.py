@@ -2,30 +2,44 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from datetime import datetime, timedelta
-import os, uuid, psycopg2, itertools
+import os
+import uuid
+import psycopg2
+import itertools
 import google.generativeai as genai
 
 app = FastAPI()
 
+# ================== ENV ==================
 DATABASE_URL = os.getenv("DATABASE_URL")
-ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "FahadJassar14061436")
 
-if not DATABASE_URL or not ADMIN_TOKEN:
-    raise RuntimeError("Missing env vars")
-
+# ================== DB ==================
 def get_conn():
     return psycopg2.connect(DATABASE_URL)
 
-# ---------- Models ----------
-class ActivateReq(BaseModel):
-    code: str
-    device_id: str
+def init_db():
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS frontend_passwords (
+        id SERIAL PRIMARY KEY,
+        password TEXT UNIQUE NOT NULL,
+        expires_at TIMESTAMP NOT NULL,
+        is_active BOOLEAN DEFAULT TRUE,
+        device_fingerprint TEXT
+    )
+    """)
+    conn.commit()
+    conn.close()
 
+init_db()
+
+# ================== MODELS ==================
 class AskReq(BaseModel):
     prompt: str
-    device_id: str
 
-# ---------- Gemini ----------
+# ================== GEMINI ==================
 api_keys = [os.getenv(f"GEMINI_API_KEY_{i}") for i in range(1, 8)]
 api_keys = [k for k in api_keys if k]
 key_cycle = itertools.cycle(api_keys)
@@ -33,7 +47,7 @@ key_cycle = itertools.cycle(api_keys)
 def get_api_key():
     return next(key_cycle)
 
-# ---------- Routes ----------
+# ================== ROUTES ==================
 @app.get("/")
 def root():
     return {"status": "server running"}
@@ -46,106 +60,91 @@ def login_page():
 def app_page():
     return FileResponse("app.html")
 
-# ---------- Admin ----------
+# ================== ADMIN ==================
 @app.post("/admin/generate")
-def admin_generate(request: Request, days: int = 30):
-    if request.headers.get("x-admin-token") != ADMIN_TOKEN:
-        raise HTTPException(status_code=401)
+def admin_generate(request: Request, days: int = 7):
+    token = request.headers.get("x-admin-token")
+    if token != ADMIN_TOKEN:
+        raise HTTPException(status_code=401, detail="unauthorized")
 
-    code = uuid.uuid4().hex[:16].upper()
+    password = uuid.uuid4().hex[:16].upper()
     expires_at = datetime.utcnow() + timedelta(days=days)
 
     conn = get_conn()
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO activation_codes (code, expires_at) VALUES (%s, %s)",
-        (code, expires_at)
+        """
+        INSERT INTO frontend_passwords (password, expires_at)
+        VALUES (%s, %s)
+        """,
+        (password, expires_at)
     )
     conn.commit()
     conn.close()
 
-    return {"code": code, "expires_at": expires_at.isoformat()}
+    return {
+        "code": password,
+        "expires_at": expires_at.isoformat()
+    }
 
-@app.post("/admin/disable")
-def admin_disable(request: Request, code: str):
-    if request.headers.get("x-admin-token") != ADMIN_TOKEN:
-        raise HTTPException(status_code=401)
-
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute(
-        "UPDATE activation_codes SET is_active=false WHERE code=%s",
-        (code,)
-    )
-    conn.commit()
-    conn.close()
-    return {"status": "disabled"}
-
-# ---------- Activate ----------
+# ================== ACTIVATE ==================
 @app.post("/activate")
-def activate(req: ActivateReq):
+def activate(request: Request):
+    code = request.headers.get("x-activation-code")
+    device = request.headers.get("x-device-id")
+
+    if not code:
+        raise HTTPException(status_code=400, detail="missing code")
+
     conn = get_conn()
     cur = conn.cursor()
     cur.execute(
-        "SELECT device_id, expires_at, is_active FROM activation_codes WHERE code=%s",
-        (req.code,)
+        """
+        SELECT expires_at, is_active, device_fingerprint
+        FROM frontend_passwords
+        WHERE password = %s
+        """,
+        (code.strip().upper(),)
     )
     row = cur.fetchone()
 
     if not row:
         conn.close()
-        raise HTTPException(status_code=401, detail="invalid")
+        return {"status": "invalid"}
 
-    device_id, expires_at, is_active = row
+    expires_at, is_active, stored_device = row
 
-    if not is_active or datetime.utcnow() > expires_at:
+    if not is_active:
         conn.close()
-        raise HTTPException(status_code=401, detail="expired_or_disabled")
+        return {"status": "revoked"}
 
-    if device_id is None:
+    if datetime.utcnow() > expires_at:
+        conn.close()
+        return {"status": "expired"}
+
+    # ربط الجهاز لأول مرة
+    if stored_device is None and device:
         cur.execute(
-            """UPDATE activation_codes
-               SET device_id=%s, last_used=%s
-               WHERE code=%s""",
-            (req.device_id, datetime.utcnow(), req.code)
+            """
+            UPDATE frontend_passwords
+            SET device_fingerprint = %s
+            WHERE password = %s
+            """,
+            (device, code.strip().upper())
         )
         conn.commit()
-        conn.close()
-        return {"status": "activated"}
 
-    if device_id != req.device_id:
+    # منع جهاز ثاني
+    if stored_device and device and stored_device != device:
         conn.close()
-        raise HTTPException(status_code=401, detail="device_mismatch")
+        return {"status": "device_mismatch"}
 
-    cur.execute(
-        "UPDATE activation_codes SET last_used=%s WHERE code=%s",
-        (datetime.utcnow(), req.code)
-    )
-    conn.commit()
     conn.close()
     return {"status": "activated"}
 
-# ---------- Ask (Protected) ----------
+# ================== ASK ==================
 @app.post("/ask")
 def ask(req: AskReq):
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute(
-        """SELECT expires_at, is_active
-           FROM activation_codes
-           WHERE device_id=%s""",
-        (req.device_id,)
-    )
-    row = cur.fetchone()
-    conn.close()
-
-    if not row:
-        raise HTTPException(status_code=401)
-
-    expires_at, is_active = row
-    if not is_active or datetime.utcnow() > expires_at:
-        raise HTTPException(status_code=401)
-
     genai.configure(api_key=get_api_key())
     model = genai.GenerativeModel("models/gemini-2.5-flash-lite")
     r = model.generate_content(req.prompt)

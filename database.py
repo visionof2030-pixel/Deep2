@@ -1,35 +1,24 @@
-import sqlite3
-from datetime import datetime
+# database.py
+import os
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
-DB = "data.db"
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 def get_connection():
-    return sqlite3.connect(DB)
+    return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
 
 def init_db():
     conn = get_connection()
     cur = conn.cursor()
+
     cur.execute("""
-    CREATE TABLE IF NOT EXISTS passwords (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        password TEXT UNIQUE,
-        expires_at TEXT
-    )
+    CREATE TABLE IF NOT EXISTS frontend_passwords (
+        id SERIAL PRIMARY KEY,
+        password TEXT UNIQUE NOT NULL,
+        expires_at TIMESTAMP NOT NULL
+    );
     """)
+
     conn.commit()
     conn.close()
-
-def is_valid_password(pw: str):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT expires_at FROM passwords WHERE password=?",
-        (pw,)
-    )
-    row = cur.fetchone()
-    conn.close()
-
-    if not row:
-        return False
-
-    return datetime.utcnow() < datetime.fromisoformat(row[0])

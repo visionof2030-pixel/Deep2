@@ -1,5 +1,6 @@
 fastapi
 uvicorn
 gunicorn
-google-generativeai
+pydantic
 psycopg2-binary
+google-generativeai

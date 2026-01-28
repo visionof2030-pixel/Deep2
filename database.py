@@ -1,24 +1,23 @@
-# database.py
 import os
 import psycopg2
-from psycopg2.extras import RealDictCursor
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 def get_connection():
-    return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+    return psycopg2.connect(DATABASE_URL)
 
 def init_db():
     conn = get_connection()
     cur = conn.cursor()
-
     cur.execute("""
-    CREATE TABLE IF NOT EXISTS frontend_passwords (
-        id SERIAL PRIMARY KEY,
-        password TEXT UNIQUE NOT NULL,
-        expires_at TIMESTAMP NOT NULL
-    );
+        CREATE TABLE IF NOT EXISTS activation_codes (
+            id SERIAL PRIMARY KEY,
+            code TEXT UNIQUE NOT NULL,
+            expires_at TIMESTAMP,
+            usage_limit INTEGER,
+            usage_count INTEGER DEFAULT 0,
+            is_active BOOLEAN DEFAULT TRUE
+        )
     """)
-
     conn.commit()
     conn.close()

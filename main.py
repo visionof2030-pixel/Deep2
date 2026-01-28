@@ -77,7 +77,7 @@ def admin_generate(request: Request, days: int = 7):
         INSERT INTO frontend_passwords (password, expires_at)
         VALUES (%s, %s)
         """,
-        (password, expires_at)
+        (password.strip(), expires_at)
     )
     conn.commit()
     conn.close()
@@ -96,15 +96,17 @@ def activate(request: Request):
     if not code:
         raise HTTPException(status_code=400, detail="missing code")
 
+    clean_code = code.strip().upper()
+
     conn = get_conn()
     cur = conn.cursor()
     cur.execute(
         """
         SELECT expires_at, is_active, device_fingerprint
         FROM frontend_passwords
-        WHERE password = %s
+        WHERE TRIM(password) = %s
         """,
-        (code.strip().upper(),)
+        (clean_code,)
     )
     row = cur.fetchone()
 
@@ -122,19 +124,19 @@ def activate(request: Request):
         conn.close()
         return {"status": "expired"}
 
-    # ربط الجهاز لأول مرة
+    # ربط الجهاز أول مرة
     if stored_device is None and device:
         cur.execute(
             """
             UPDATE frontend_passwords
             SET device_fingerprint = %s
-            WHERE password = %s
+            WHERE TRIM(password) = %s
             """,
-            (device, code.strip().upper())
+            (device, clean_code)
         )
         conn.commit()
 
-    # منع جهاز ثاني
+    # منع جهاز آخر
     if stored_device and device and stored_device != device:
         conn.close()
         return {"status": "device_mismatch"}

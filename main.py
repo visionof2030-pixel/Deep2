@@ -1,23 +1,24 @@
 from fastapi import FastAPI, HTTPException, Header
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from datetime import datetime, timedelta
-import os
-import uuid
-import itertools
+import os, uuid
 import psycopg2
 import google.generativeai as genai
+import itertools
 
 app = FastAPI()
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "admin-secret")
+app.mount("/", StaticFiles(directory=".", html=True), name="static")
 
-def get_conn():
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+def db():
     return psycopg2.connect(DATABASE_URL)
 
 def init_db():
-    conn = get_conn()
-    cur = conn.cursor()
+    c = db()
+    cur = c.cursor()
     cur.execute("""
     CREATE TABLE IF NOT EXISTS frontend_passwords (
         id SERIAL PRIMARY KEY,
@@ -25,8 +26,8 @@ def init_db():
         expires_at TIMESTAMP
     )
     """)
-    conn.commit()
-    conn.close()
+    c.commit()
+    c.close()
 
 init_db()
 
@@ -55,21 +56,21 @@ def ask(req: AskReq):
     return {"answer": r.text}
 
 @app.post("/admin/generate")
-def admin_generate(x_admin_token: str = Header(None)):
-    if x_admin_token != ADMIN_TOKEN:
+def generate_code(x_admin_token: str = Header(None)):
+    if x_admin_token != os.getenv("ADMIN_TOKEN"):
         raise HTTPException(status_code=401, detail="unauthorized")
 
     password = uuid.uuid4().hex[:16].upper()
     expires_at = datetime.utcnow() + timedelta(days=7)
 
-    conn = get_conn()
-    cur = conn.cursor()
+    c = db()
+    cur = c.cursor()
     cur.execute(
         "INSERT INTO frontend_passwords (password, expires_at) VALUES (%s, %s)",
         (password, expires_at)
     )
-    conn.commit()
-    conn.close()
+    c.commit()
+    c.close()
 
     return {
         "password": password,
@@ -78,20 +79,38 @@ def admin_generate(x_admin_token: str = Header(None)):
 
 @app.post("/activate")
 def activate(req: ActivateReq):
-    conn = get_conn()
-    cur = conn.cursor()
+    c = db()
+    cur = c.cursor()
     cur.execute(
-        "SELECT expires_at FROM frontend_passwords WHERE password = %s",
+        "SELECT expires_at FROM frontend_passwords WHERE password=%s",
         (req.password,)
     )
     row = cur.fetchone()
-    conn.close()
+    c.close()
 
     if not row:
         return {"status": "invalid"}
 
-    expires_at = row[0]
-    if expires_at < datetime.utcnow():
+    if datetime.utcnow() > row[0]:
+        return {"status": "expired"}
+
+    return {"status": "ok"}
+
+@app.get("/activate/{code}")
+def activate_link(code: str):
+    c = db()
+    cur = c.cursor()
+    cur.execute(
+        "SELECT expires_at FROM frontend_passwords WHERE password=%s",
+        (code,)
+    )
+    row = cur.fetchone()
+    c.close()
+
+    if not row:
+        return {"status": "invalid"}
+
+    if datetime.utcnow() > row[0]:
         return {"status": "expired"}
 
     return {"status": "ok"}

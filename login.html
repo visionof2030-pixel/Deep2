@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <title>تفعيل الأداة</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body {
+      background:#0f172a;
+      color:white;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      height:100vh;
+      font-family:tahoma;
+    }
+    .box {
+      background:#1e293b;
+      padding:25px;
+      border-radius:10px;
+      width:90%;
+      max-width:350px;
+      text-align:center;
+    }
+    input,button {
+      width:100%;
+      padding:12px;
+      margin-top:10px;
+      font-size:15px;
+    }
+    button {
+      background:#22c55e;
+      border:none;
+      font-weight:bold;
+      cursor:pointer;
+    }
+  </style>
+</head>
+<body>
+
+<div class="box">
+  <h3>أدخل كود التفعيل</h3>
+  <input id="code" placeholder="مثال: A1B2C3D4E5">
+  <button onclick="activate()">تفعيل</button>
+</div>
+
+<script>
+async function activate(){
+  const code = document.getElementById("code").value.trim();
+  if(!code) return alert("ادخل الكود");
+
+  const res = await fetch("https://deep2-0z0k.onrender.com/activate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password: code })
+  });
+
+  const data = await res.json();
+
+  if (data.status === "ok") {
+    localStorage.setItem("activated", "1");
+    alert("تم التفعيل بنجاح");
+    // هنا تحط صفحة الأداة
+    location.href = "/app.html";
+  } else {
+    alert("الكود غير صحيح أو منتهي");
+  }
+}
+</script>
+
+</body>
+</html>

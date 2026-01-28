@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<body>
+<h3>ادخل الباسورد</h3>
+<input id="pw" type="password">
+<button onclick="login()">دخول</button>
+
+<script>
+async function login(){
+  const pw = document.getElementById("pw").value
+  const r = await fetch("/login", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({password: pw})
+  })
+
+  if(r.ok) location.href="/app"
+  else alert("باسورد خاطئ أو منتهي")
+}
+</script>
+</body>
+</html>

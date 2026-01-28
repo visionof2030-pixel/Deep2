@@ -1,28 +1,47 @@
 <script>
-function activate(){
+function getDeviceId() {
+  let deviceId = localStorage.getItem("device_id");
+  if (!deviceId) {
+    deviceId = crypto.randomUUID();
+    localStorage.setItem("device_id", deviceId);
+  }
+  return deviceId;
+}
+
+function activate() {
   const code = document.getElementById("code").value.trim();
-  if(!code) return;
+  if (!code) return;
+
+  const deviceId = getDeviceId();
 
   fetch("https://deep2-0z0k.onrender.com/activate", {
     method: "POST",
     headers: {
-      "x-activation-code": code
-    }
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      code: code,
+      device_id: deviceId
+    })
   })
-  .then(r => r.json())
+  .then(async r => {
+    const data = await r.json();
+    if (!r.ok) throw data;
+    return data;
+  })
   .then(d => {
-    if(d.status === "activated"){
+    if (d.status === "activated") {
+      localStorage.setItem("activated", "1");
       document.getElementById("success").style.display = "block";
       document.getElementById("error").style.display = "none";
-      localStorage.setItem("activated", "1");
       setTimeout(() => location.href = "app.html", 800);
-    } else {
-      document.getElementById("error").style.display = "block";
-      document.getElementById("success").style.display = "none";
     }
   })
-  .catch(() => {
+  .catch(err => {
     document.getElementById("error").style.display = "block";
+    document.getElementById("success").style.display = "none";
+
+    console.error("Activation error:", err);
   });
 }
 </script>

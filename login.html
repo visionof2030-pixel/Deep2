@@ -1,72 +1,88 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="ar">
 <head>
-  <meta charset="UTF-8">
-  <title>تفعيل الأداة</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <style>
-    body {
-      background:#0f172a;
-      color:white;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      height:100vh;
-      font-family:tahoma;
-    }
-    .box {
-      background:#1e293b;
-      padding:25px;
-      border-radius:10px;
-      width:90%;
-      max-width:350px;
-      text-align:center;
-    }
-    input,button {
-      width:100%;
-      padding:12px;
-      margin-top:10px;
-      font-size:15px;
-    }
-    button {
-      background:#22c55e;
-      border:none;
-      font-weight:bold;
-      cursor:pointer;
-    }
-  </style>
+<meta charset="UTF-8">
+<title>تفعيل الأداة</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body{
+margin:0;
+height:100vh;
+display:flex;
+align-items:center;
+justify-content:center;
+background:#0b1c2d;
+font-family:Arial;
+}
+.card{
+background:#16293f;
+padding:30px;
+border-radius:12px;
+width:90%;
+max-width:400px;
+text-align:center;
+box-shadow:0 0 20px rgba(0,0,0,.3)
+}
+input{
+width:100%;
+padding:12px;
+border-radius:8px;
+border:none;
+margin:15px 0;
+font-size:16px
+}
+button{
+width:100%;
+padding:12px;
+border:none;
+border-radius:8px;
+background:#22c55e;
+color:white;
+font-size:18px;
+cursor:pointer
+}
+.error{
+color:#ff6b6b;
+margin-top:10px;
+display:none
+}
+.success{
+color:#22c55e;
+margin-top:10px;
+display:none
+}
+</style>
 </head>
 <body>
-
-<div class="box">
-  <h3>أدخل كود التفعيل</h3>
-  <input id="code" placeholder="مثال: A1B2C3D4E5">
-  <button onclick="activate()">تفعيل</button>
+<div class="card">
+<h2>أدخل كود التفعيل</h2>
+<input id="code" placeholder="مثال: A1B2C3D4E5">
+<button onclick="activate()">تفعيل</button>
+<div id="error" class="error">كود غير صالح</div>
+<div id="success" class="success">تم التفعيل بنجاح</div>
 </div>
 
 <script>
-async function activate(){
-  const code = document.getElementById("code").value.trim();
-  if(!code) return alert("ادخل الكود");
-
-  const res = await fetch("https://deep2-0z0k.onrender.com/activate", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ password: code })
-  });
-
-  const data = await res.json();
-
-  if (data.status === "ok") {
-    localStorage.setItem("activated", "1");
-    alert("تم التفعيل بنجاح");
-    // هنا تحط صفحة الأداة
-    location.href = "/app.html";
-  } else {
-    alert("الكود غير صحيح أو منتهي");
-  }
+function activate(){
+const code=document.getElementById("code").value.trim();
+if(!code)return;
+fetch(`https://deep2-0z0k.onrender.com/activate/${code}`)
+.then(r=>r.json())
+.then(d=>{
+if(d.status==="ok"){
+document.getElementById("success").style.display="block";
+document.getElementById("error").style.display="none";
+localStorage.setItem("activated","1");
+setTimeout(()=>location.href="app.html",1000);
+}else{
+document.getElementById("error").style.display="block";
+document.getElementById("success").style.display="none";
+}
+})
+.catch(()=>{
+document.getElementById("error").style.display="block";
+});
 }
 </script>
-
 </body>
 </html>

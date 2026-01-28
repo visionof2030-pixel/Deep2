@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<body>
+<h2>الواجهة شغالة</h2>
+<textarea id="q"></textarea>
+<button onclick="ask()">اسأل</button>
+<pre id="out"></pre>
+
+<script>
+async function ask(){
+  const r = await fetch("/ask",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({prompt:q.value})
+  })
+  out.textContent = (await r.json()).answer
+}
+</script>
+</body>
+</html>

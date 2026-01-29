@@ -1,11 +1,11 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from datetime import datetime
+import uuid
 
 app = FastAPI()
 
-# ====== CORS ======
+# ===== CORS =====
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -14,28 +14,44 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ====== نموذج الطلب ======
+# ===== تخزين الأكواد في الذاكرة =====
+activation_codes = {}  # code: used(True/False)
+
+# ===== نماذج الطلب =====
 class AskRequest(BaseModel):
     prompt: str
+    code: str
 
-# ====== اختبار أن السيرفر يعمل ======
-@app.get("/health")
-def health():
-    return {
-        "status": "OK",
-        "message": "Server is running",
-        "time": datetime.now()
-    }
+# ===== توليد كود تفعيل =====
+@app.post("/admin/generate")
+def generate_code():
+    code = str(uuid.uuid4())
+    activation_codes[code] = False  # لم يُستخدم
+    return {"code": code}
 
-# ====== نقطة اختبار الذكاء الاصطناعي ======
+# ===== الأداة المقفلة =====
 @app.post("/ask")
 def ask(data: AskRequest):
+    if data.code not in activation_codes:
+        raise HTTPException(status_code=401, detail="كود تفعيل غير صالح")
+
+    if activation_codes[data.code]:
+        raise HTTPException(status_code=401, detail="كود التفعيل مستخدم")
+
+    # تعليم الكود كمستخدم
+    activation_codes[data.code] = True
+
     return {
         "answer": (
-            "1. يهدف هذا الموضوع إلى توضيح أهمية الذكاء الاصطناعي في تطوير التعليم.\n"
-            "2. يساعد الذكاء الاصطناعي المعلم على تحسين أساليب التدريس.\n"
-            "3. يسهم في رفع مستوى تفاعل الطلاب داخل الصف.\n"
-            "4. يدعم عمليات التقييم والمتابعة بشكل دقيق.\n"
-            "5. يمثل الذكاء الاصطناعي مستقبل التعليم الحديث."
+            "الأداة تعمل بنجاح.\n"
+            "تم التحقق من كود التفعيل.\n"
+            "هذا رد تجريبي.\n"
+            "النظام يعمل كما هو متوقع.\n"
+            "جاهزون للخطوة التالية."
         )
     }
+
+# ===== فحص السيرفر =====
+@app.get("/health")
+def health():
+    return {"status": "ok"}

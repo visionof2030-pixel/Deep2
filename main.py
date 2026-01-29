@@ -22,7 +22,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-init_db()
+# init_db()
 
 class Req(BaseModel):
     prompt: str

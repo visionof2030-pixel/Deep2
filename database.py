@@ -1,7 +1,6 @@
-# database.py
 import sqlite3
 
-DATABASE = "database.db"
+DATABASE = "/data/database.db"
 
 def get_connection():
     return sqlite3.connect(DATABASE, check_same_thread=False)

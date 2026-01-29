@@ -55,9 +55,12 @@ def admin_auth(x_admin_token: str = Header(...)):
     if x_admin_token != ADMIN_TOKEN:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-@app.get("/health")
+from fastapi import Depends
+from security import activation_required
+
+@app.get("/health", dependencies=[Depends(activation_required)])
 def health():
-    return {"status": "ok"}
+    return {"status": "active"}
 
 @app.post("/ask")
 def ask(req: Req, _: None = Depends(activation_required)):

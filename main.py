@@ -1,3 +1,4 @@
+# main.py
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
@@ -10,12 +11,9 @@ from database import init_db, get_connection
 from create_key import create_key
 from security import activation_required
 
-# ==================== إعدادات عامة ====================
+# ================== إعدادات عامة ==================
 
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
-
-if not ADMIN_TOKEN:
-    raise RuntimeError("ADMIN_TOKEN not set")
 
 app = FastAPI()
 
@@ -27,10 +25,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# تهيئة قاعدة البيانات
 init_db()
 
-# ==================== نماذج الطلبات ====================
+# ================== النماذج ==================
 
 class AskReq(BaseModel):
     prompt: str
@@ -39,7 +36,7 @@ class GenerateKeyReq(BaseModel):
     expires_at: str | None = None
     usage_limit: int | None = None
 
-# ==================== مفاتيح Gemini ====================
+# ================== مفاتيح Gemini ==================
 
 api_keys = [
     os.getenv("GEMINI_API_KEY_1"),
@@ -54,29 +51,29 @@ api_keys = [
 api_keys = [k for k in api_keys if k]
 
 if not api_keys:
-    raise RuntimeError("No GEMINI API KEYS found")
+    raise RuntimeError("No GEMINI API keys found")
 
 key_cycle = itertools.cycle(api_keys)
 
 def get_api_key():
     return next(key_cycle)
 
-# ==================== الحماية ====================
+# ================== حماية الأدمن ==================
 
 def admin_auth(x_admin_token: str = Header(...)):
     if x_admin_token != ADMIN_TOKEN:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-# ==================== Endpoints عامة ====================
+# ================== Health (محمي) ==================
 
-@app.get("/health")
+@app.get("/health", dependencies=[Depends(activation_required)])
 def health():
-    return {"status": "ok"}
+    return {"status": "active"}
 
-# ==================== Endpoint الذكاء الاصطناعي ====================
+# ================== AI Endpoint ==================
 
-@app.post("/ask")
-def ask(req: AskReq, _: None = Depends(activation_required)):
+@app.post("/ask", dependencies=[Depends(activation_required)])
+def ask(req: AskReq):
     try:
         genai.configure(api_key=get_api_key())
         model = genai.GenerativeModel("models/gemini-2.5-flash-lite")
@@ -85,37 +82,30 @@ def ask(req: AskReq, _: None = Depends(activation_required)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# ==================== Admin APIs ====================
+# ================== Admin APIs ==================
 
 @app.post("/admin/generate", dependencies=[Depends(admin_auth)])
 def admin_generate(req: GenerateKeyReq):
-    return {
-        "code": create_key(
-            expires_at=req.expires_at,
-            usage_limit=req.usage_limit
-        )
-    }
+    code = create_key(req.expires_at, req.usage_limit)
+    return {"code": code}
 
 @app.get("/admin/codes", dependencies=[Depends(admin_auth)])
 def admin_codes():
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
-        SELECT id, code, is_active, usage_count, usage_limit, expires_at
+        SELECT id, code, is_active, usage_count, expires_at
         FROM activation_codes
-        ORDER BY id DESC
     """)
     rows = cur.fetchall()
     conn.close()
-
     return [
         {
             "id": r[0],
             "code": r[1],
             "active": bool(r[2]),
             "usage": r[3],
-            "usage_limit": r[4],
-            "expires_at": r[5]
+            "expires_at": r[4],
         }
         for r in rows
     ]
@@ -124,11 +114,10 @@ def admin_codes():
 def admin_toggle(code_id: int):
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("""
-        UPDATE activation_codes
-        SET is_active = NOT is_active
-        WHERE id = %s
-    """, (code_id,))
+    cur.execute(
+        "UPDATE activation_codes SET is_active = CASE WHEN is_active=1 THEN 0 ELSE 1 END WHERE id=?",
+        (code_id,)
+    )
     conn.commit()
     conn.close()
     return {"status": "ok"}
@@ -137,15 +126,12 @@ def admin_toggle(code_id: int):
 def admin_delete(code_id: int):
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute(
-        "DELETE FROM activation_codes WHERE id = %s",
-        (code_id,)
-    )
+    cur.execute("DELETE FROM activation_codes WHERE id=?", (code_id,))
     conn.commit()
     conn.close()
     return {"status": "deleted"}
 
-# ==================== Admin Panel (HTML) ====================
+# ================== Admin Panel ==================
 
 @app.get("/admin", response_class=HTMLResponse)
 def admin_page():
@@ -163,72 +149,43 @@ td,th{border:1px solid #ccc;padding:5px;font-size:12px}
 </style>
 </head>
 <body>
-
 <h3>Admin Panel</h3>
-
 <input id="token" placeholder="Admin Token">
 <button onclick="saveToken()">Save Token</button>
 <button onclick="generate()">Generate Key</button>
-
 <table id="tbl"></table>
-
 <script>
 const api='/admin';
-
-function saveToken(){
-  localStorage.setItem('t', document.getElementById('token').value);
-  load();
-}
-
-function h(){
-  return {'X-Admin-Token': localStorage.getItem('t')};
-}
-
+function saveToken(){localStorage.setItem('t',document.getElementById('token').value);load();}
+function h(){return {'X-Admin-Token':localStorage.getItem('t')}}
 function generate(){
-  fetch(api+'/generate', {
-    method:'POST',
-    headers:{...h(),'Content-Type':'application/json'},
-    body:'{}'
-  }).then(load);
+fetch(api+'/generate',{method:'POST',headers:{...h(),'Content-Type':'application/json'},body:'{}'}).then(load)
 }
-
 function toggle(id){
-  fetch(api+'/code/'+id+'/toggle', {
-    method:'PUT',
-    headers:h()
-  }).then(load);
+fetch(api+'/code/'+id+'/toggle',{method:'PUT',headers:h()}).then(load)
 }
-
-function delCode(id){
-  fetch(api+'/code/'+id, {
-    method:'DELETE',
-    headers:h()
-  }).then(load);
+function del(id){
+fetch(api+'/code/'+id,{method:'DELETE',headers:h()}).then(load)
 }
-
 function load(){
-  fetch(api+'/codes', {headers:h()})
-    .then(r=>r.json())
-    .then(d=>{
-      let t='<tr><th>Code</th><th>Usage</th><th>Active</th><th>Actions</th></tr>';
-      d.forEach(c=>{
-        t+=`<tr>
-          <td>${c.code}</td>
-          <td>${c.usage}${c.usage_limit ? '/' + c.usage_limit : ''}</td>
-          <td>${c.active}</td>
-          <td>
-            <button onclick="toggle(${c.id})">Toggle</button>
-            <button onclick="delCode(${c.id})">Delete</button>
-          </td>
-        </tr>`;
-      });
-      document.getElementById('tbl').innerHTML=t;
-    });
+fetch(api+'/codes',{headers:h()}).then(r=>r.json()).then(d=>{
+let t='<tr><th>Code</th><th>Use</th><th>Active</th><th>Action</th></tr>';
+d.forEach(c=>{
+t+=`<tr>
+<td>${c.code}</td>
+<td>${c.usage}</td>
+<td>${c.active}</td>
+<td>
+<button onclick="toggle(${c.id})">Toggle</button>
+<button onclick="del(${c.id})">Del</button>
+</td>
+</tr>`;
+});
+document.getElementById('tbl').innerHTML=t;
+})
 }
-
 load();
 </script>
-
 </body>
 </html>
 """

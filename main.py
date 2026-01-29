@@ -1,17 +1,14 @@
 # main.py
-from fastapi import FastAPI, HTTPException, Depends, Header
+from fastapi import FastAPI, HTTPException, Depends, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 import os
 import itertools
 import google.generativeai as genai
-
 from database import init_db, get_connection
 from create_key import create_key
 from security import activation_required
-
-# ================== إعدادات عامة ==================
 
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
 
@@ -27,16 +24,12 @@ app.add_middleware(
 
 init_db()
 
-# ================== النماذج ==================
-
-class AskReq(BaseModel):
+class Req(BaseModel):
     prompt: str
 
 class GenerateKeyReq(BaseModel):
     expires_at: str | None = None
     usage_limit: int | None = None
-
-# ================== مفاتيح Gemini ==================
 
 api_keys = [
     os.getenv("GEMINI_API_KEY_1"),
@@ -51,29 +44,23 @@ api_keys = [
 api_keys = [k for k in api_keys if k]
 
 if not api_keys:
-    raise RuntimeError("No GEMINI API keys found")
+    raise RuntimeError("No GEMINI API KEYS found")
 
 key_cycle = itertools.cycle(api_keys)
 
 def get_api_key():
     return next(key_cycle)
 
-# ================== حماية الأدمن ==================
-
 def admin_auth(x_admin_token: str = Header(...)):
     if x_admin_token != ADMIN_TOKEN:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-# ================== Health (محمي) ==================
-
-@app.get("/health", dependencies=[Depends(activation_required)])
+@app.get("/health")
 def health():
-    return {"status": "active"}
+    return {"status": "ok"}
 
-# ================== AI Endpoint ==================
-
-@app.post("/ask", dependencies=[Depends(activation_required)])
-def ask(req: AskReq):
+@app.post("/ask")
+def ask(req: Req, _: None = Depends(activation_required)):
     try:
         genai.configure(api_key=get_api_key())
         model = genai.GenerativeModel("models/gemini-2.5-flash-lite")
@@ -82,31 +69,19 @@ def ask(req: AskReq):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# ================== Admin APIs ==================
-
 @app.post("/admin/generate", dependencies=[Depends(admin_auth)])
 def admin_generate(req: GenerateKeyReq):
-    code = create_key(req.expires_at, req.usage_limit)
-    return {"code": code}
+    return {"code": create_key(req.expires_at, req.usage_limit)}
 
 @app.get("/admin/codes", dependencies=[Depends(admin_auth)])
 def admin_codes():
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("""
-        SELECT id, code, is_active, usage_count, expires_at
-        FROM activation_codes
-    """)
+    cur.execute("SELECT id, code, is_active, usage_count FROM activation_codes")
     rows = cur.fetchall()
     conn.close()
     return [
-        {
-            "id": r[0],
-            "code": r[1],
-            "active": bool(r[2]),
-            "usage": r[3],
-            "expires_at": r[4],
-        }
+        {"id": r[0], "code": r[1], "active": bool(r[2]), "usage": r[3]}
         for r in rows
     ]
 
@@ -130,8 +105,6 @@ def admin_delete(code_id: int):
     conn.commit()
     conn.close()
     return {"status": "deleted"}
-
-# ================== Admin Panel ==================
 
 @app.get("/admin", response_class=HTMLResponse)
 def admin_page():
@@ -169,17 +142,11 @@ fetch(api+'/code/'+id,{method:'DELETE',headers:h()}).then(load)
 }
 function load(){
 fetch(api+'/codes',{headers:h()}).then(r=>r.json()).then(d=>{
-let t='<tr><th>Code</th><th>Use</th><th>Active</th><th>Action</th></tr>';
+let t='<tr><th>Code</th><th>Use</th><th>Act</th></tr>';
 d.forEach(c=>{
-t+=`<tr>
-<td>${c.code}</td>
-<td>${c.usage}</td>
-<td>${c.active}</td>
-<td>
-<button onclick="toggle(${c.id})">Toggle</button>
-<button onclick="del(${c.id})">Del</button>
-</td>
-</tr>`;
+t+=`<tr><td>${c.code}</td><td>${c.usage}</td>
+<td><button onclick="toggle(${c.id})">Toggle</button>
+<button onclick="del(${c.id})">Del</button></td></tr>`;
 });
 document.getElementById('tbl').innerHTML=t;
 })

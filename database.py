@@ -1,23 +1,28 @@
-import sqlite3
+# database.py
+import os
+import psycopg2
 
-DATABASE = "/data/database.db"
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL not set")
 
 def get_connection():
-    return sqlite3.connect(DATABASE, check_same_thread=False)
+    return psycopg2.connect(DATABASE_URL)
 
 def init_db():
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
     CREATE TABLE IF NOT EXISTS activation_codes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         code TEXT UNIQUE,
-        is_active INTEGER,
-        created_at TEXT,
-        expires_at TEXT,
+        is_active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP,
+        expires_at TIMESTAMP,
         usage_limit INTEGER,
-        usage_count INTEGER,
-        last_used_at TEXT
+        usage_count INTEGER DEFAULT 0,
+        last_used_at TIMESTAMP
     )
     """)
     conn.commit()

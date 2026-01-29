@@ -22,7 +22,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# init_db()
+try:
+    init_db()
+except Exception as e:
+    print("DB init skipped:", e)
 
 class Req(BaseModel):
     prompt: str

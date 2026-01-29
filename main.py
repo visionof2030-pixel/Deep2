@@ -1,153 +1,158 @@
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
+# main.py
+from fastapi import FastAPI, HTTPException, Depends, Header, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
-from datetime import datetime, timedelta
 import os
-import uuid
-import psycopg2
 import itertools
 import google.generativeai as genai
+from database import init_db, get_connection
+from create_key import create_key
+from security import activation_required
+
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
 
 app = FastAPI()
 
-# ================== ENV ==================
-DATABASE_URL = os.getenv("DATABASE_URL")
-ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "FahadJassar14061436")
-
-# ================== DB ==================
-def get_conn():
-    return psycopg2.connect(DATABASE_URL)
-
-def init_db():
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS frontend_passwords (
-        id SERIAL PRIMARY KEY,
-        password TEXT UNIQUE NOT NULL,
-        expires_at TIMESTAMP NOT NULL,
-        is_active BOOLEAN DEFAULT TRUE,
-        device_fingerprint TEXT
-    )
-    """)
-    conn.commit()
-    conn.close()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 init_db()
 
-# ================== MODELS ==================
-class AskReq(BaseModel):
+class Req(BaseModel):
     prompt: str
 
-# ================== GEMINI ==================
-api_keys = [os.getenv(f"GEMINI_API_KEY_{i}") for i in range(1, 8)]
+class GenerateKeyReq(BaseModel):
+    expires_at: str | None = None
+    usage_limit: int | None = None
+
+api_keys = [
+    os.getenv("GEMINI_API_KEY_1"),
+    os.getenv("GEMINI_API_KEY_2"),
+    os.getenv("GEMINI_API_KEY_3"),
+    os.getenv("GEMINI_API_KEY_4"),
+    os.getenv("GEMINI_API_KEY_5"),
+    os.getenv("GEMINI_API_KEY_6"),
+    os.getenv("GEMINI_API_KEY_7"),
+]
+
 api_keys = [k for k in api_keys if k]
+
+if not api_keys:
+    raise RuntimeError("No GEMINI API KEYS found")
+
 key_cycle = itertools.cycle(api_keys)
 
 def get_api_key():
     return next(key_cycle)
 
-# ================== ROUTES ==================
-@app.get("/")
-def root():
-    return {"status": "server running"}
+def admin_auth(x_admin_token: str = Header(...)):
+    if x_admin_token != ADMIN_TOKEN:
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
-@app.get("/login.html")
-def login_page():
-    return FileResponse("login.html")
+@app.get("/health")
+def health():
+    return {"status": "ok"}
 
-@app.get("/app.html")
-def app_page():
-    return FileResponse("app.html")
+@app.post("/ask")
+def ask(req: Req, _: None = Depends(activation_required)):
+    try:
+        genai.configure(api_key=get_api_key())
+        model = genai.GenerativeModel("models/gemini-2.5-flash-lite")
+        response = model.generate_content(req.prompt)
+        return {"answer": response.text}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-# ================== ADMIN ==================
-@app.post("/admin/generate")
-def admin_generate(request: Request, days: int = 7):
-    token = request.headers.get("x-admin-token")
-    if token != ADMIN_TOKEN:
-        raise HTTPException(status_code=401, detail="unauthorized")
+@app.post("/admin/generate", dependencies=[Depends(admin_auth)])
+def admin_generate(req: GenerateKeyReq):
+    return {"code": create_key(req.expires_at, req.usage_limit)}
 
-    password = uuid.uuid4().hex[:16].upper()
-    expires_at = datetime.utcnow() + timedelta(days=days)
+@app.get("/admin/codes", dependencies=[Depends(admin_auth)])
+def admin_codes():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id, code, is_active, usage_count FROM activation_codes")
+    rows = cur.fetchall()
+    conn.close()
+    return [
+        {"id": r[0], "code": r[1], "active": bool(r[2]), "usage": r[3]}
+        for r in rows
+    ]
 
-    conn = get_conn()
+@app.put("/admin/code/{code_id}/toggle", dependencies=[Depends(admin_auth)])
+def admin_toggle(code_id: int):
+    conn = get_connection()
     cur = conn.cursor()
     cur.execute(
-        """
-        INSERT INTO frontend_passwords (password, expires_at)
-        VALUES (%s, %s)
-        """,
-        (password.strip(), expires_at)
+        "UPDATE activation_codes SET is_active = CASE WHEN is_active=1 THEN 0 ELSE 1 END WHERE id=?",
+        (code_id,)
     )
     conn.commit()
     conn.close()
+    return {"status": "ok"}
 
-    return {
-        "code": password,
-        "expires_at": expires_at.isoformat()
-    }
-
-# ================== ACTIVATE ==================
-@app.post("/activate")
-def activate(request: Request):
-    code = request.headers.get("x-activation-code")
-    device = request.headers.get("x-device-id")
-
-    if not code:
-        raise HTTPException(status_code=400, detail="missing code")
-
-    clean_code = code.strip().upper()
-
-    conn = get_conn()
+@app.delete("/admin/code/{code_id}", dependencies=[Depends(admin_auth)])
+def admin_delete(code_id: int):
+    conn = get_connection()
     cur = conn.cursor()
-    cur.execute(
-        """
-        SELECT expires_at, is_active, device_fingerprint
-        FROM frontend_passwords
-        WHERE TRIM(password) = %s
-        """,
-        (clean_code,)
-    )
-    row = cur.fetchone()
-
-    if not row:
-        conn.close()
-        return {"status": "invalid"}
-
-    expires_at, is_active, stored_device = row
-
-    if not is_active:
-        conn.close()
-        return {"status": "revoked"}
-
-    if datetime.utcnow() > expires_at:
-        conn.close()
-        return {"status": "expired"}
-
-    # ربط الجهاز أول مرة
-    if stored_device is None and device:
-        cur.execute(
-            """
-            UPDATE frontend_passwords
-            SET device_fingerprint = %s
-            WHERE TRIM(password) = %s
-            """,
-            (device, clean_code)
-        )
-        conn.commit()
-
-    # منع جهاز آخر
-    if stored_device and device and stored_device != device:
-        conn.close()
-        return {"status": "device_mismatch"}
-
+    cur.execute("DELETE FROM activation_codes WHERE id=?", (code_id,))
+    conn.commit()
     conn.close()
-    return {"status": "activated"}
+    return {"status": "deleted"}
 
-# ================== ASK ==================
-@app.post("/ask")
-def ask(req: AskReq):
-    genai.configure(api_key=get_api_key())
-    model = genai.GenerativeModel("models/gemini-2.5-flash-lite")
-    r = model.generate_content(req.prompt)
-    return {"answer": r.text}
+@app.get("/admin", response_class=HTMLResponse)
+def admin_page():
+    return """
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin Panel</title>
+<style>
+body{font-family:sans-serif;padding:10px}
+input,button{width:100%;padding:10px;margin:5px 0}
+table{width:100%;border-collapse:collapse}
+td,th{border:1px solid #ccc;padding:5px;font-size:12px}
+</style>
+</head>
+<body>
+<h3>Admin Panel</h3>
+<input id="token" placeholder="Admin Token">
+<button onclick="saveToken()">Save Token</button>
+<button onclick="generate()">Generate Key</button>
+<table id="tbl"></table>
+<script>
+const api='/admin';
+function saveToken(){localStorage.setItem('t',document.getElementById('token').value);load();}
+function h(){return {'X-Admin-Token':localStorage.getItem('t')}}
+function generate(){
+fetch(api+'/generate',{method:'POST',headers:{...h(),'Content-Type':'application/json'},body:'{}'}).then(load)
+}
+function toggle(id){
+fetch(api+'/code/'+id+'/toggle',{method:'PUT',headers:h()}).then(load)
+}
+function del(id){
+fetch(api+'/code/'+id,{method:'DELETE',headers:h()}).then(load)
+}
+function load(){
+fetch(api+'/codes',{headers:h()}).then(r=>r.json()).then(d=>{
+let t='<tr><th>Code</th><th>Use</th><th>Act</th></tr>';
+d.forEach(c=>{
+t+=`<tr><td>${c.code}</td><td>${c.usage}</td>
+<td><button onclick="toggle(${c.id})">Toggle</button>
+<button onclick="del(${c.id})">Del</button></td></tr>`;
+});
+document.getElementById('tbl').innerHTML=t;
+})
+}
+load();
+</script>
+</body>
+</html>
+"""

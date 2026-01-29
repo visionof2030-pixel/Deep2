@@ -1,3 +1,4 @@
+# create_key.py
 import uuid
 from datetime import datetime
 from database import get_connection
@@ -9,12 +10,12 @@ def create_key(expires_at=None, usage_limit=None):
     cur.execute(
         """
         INSERT INTO activation_codes
-        (code, created_at, expires_at, usage_limit)
-        VALUES (%s, %s, %s, %s)
+        (code, is_active, created_at, expires_at, usage_limit, usage_count)
+        VALUES (?, 1, ?, ?, ?, 0)
         """,
         (
             code,
-            datetime.utcnow(),
+            datetime.utcnow().isoformat(),
             expires_at,
             usage_limit
         )

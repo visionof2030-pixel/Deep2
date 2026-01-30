@@ -1,10 +1,10 @@
-from fastapi import FastAPI, HTTPException, Header, Depends
+from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from datetime import datetime, timedelta
+import psycopg2
 import os
 import uuid
-import psycopg2
 
 # ================== إعداد التطبيق ==================
 app = FastAPI()
@@ -20,55 +20,42 @@ app.add_middleware(
 DATABASE_URL = os.getenv("DATABASE_URL")
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
 
-# ================== قاعدة البيانات ==================
-def get_conn():
+# ================== اتصال قاعدة البيانات ==================
+def get_db():
     return psycopg2.connect(DATABASE_URL)
 
-def init_db():
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS activation_codes (
-        code TEXT PRIMARY KEY,
-        used BOOLEAN DEFAULT FALSE,
-        expires_at TIMESTAMP NOT NULL,
-        created_at TIMESTAMP DEFAULT NOW()
-    );
-    """)
-    conn.commit()
-    cur.close()
-    conn.close()
-
-# تُنفَّذ مرة عند تشغيل السيرفر
-init_db()
-
-# ================== الحماية (أدمن) ==================
-def admin_required(x_admin_token: str = Header(...)):
-    if x_admin_token != ADMIN_TOKEN:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
-# ================== نماذج ==================
+# ================== نماذج الطلب ==================
 class GenerateReq(BaseModel):
-    days_valid: int = 1  # عدد أيام الصلاحية
+    days_valid: int
 
-class ActivateReq(BaseModel):
+class UseReq(BaseModel):
     code: str
+    prompt: str
 
 # ================== اختبار السيرفر ==================
 @app.get("/health")
 def health():
     return {"status": "ok", "time": datetime.now()}
 
-# ================== توليد كود (أدمن) ==================
-@app.post("/admin/generate", dependencies=[Depends(admin_required)])
-def generate_code(data: GenerateReq):
+# ================== توليد كود تفعيل ==================
+@app.post("/admin/generate")
+def generate_code(
+    data: GenerateReq,
+    x_admin_token: str = Header(None)
+):
+    if x_admin_token != ADMIN_TOKEN:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
     code = str(uuid.uuid4())
     expires_at = datetime.now() + timedelta(days=data.days_valid)
 
-    conn = get_conn()
+    conn = get_db()
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO activation_codes (code, expires_at) VALUES (%s, %s)",
+        """
+        INSERT INTO activation_codes (code, expires_at)
+        VALUES (%s, %s)
+        """,
         (code, expires_at)
     )
     conn.commit()
@@ -80,16 +67,21 @@ def generate_code(data: GenerateReq):
         "expires_at": expires_at
     }
 
-# ================== تفعيل الكود (مستخدم) ==================
-@app.post("/activate")
-def activate_code(data: ActivateReq):
-    conn = get_conn()
+# ================== استخدام الأداة بالكود ==================
+@app.post("/use")
+def use_tool(data: UseReq):
+    conn = get_db()
     cur = conn.cursor()
 
     cur.execute(
-        "SELECT used, expires_at FROM activation_codes WHERE code = %s",
+        """
+        SELECT used, expires_at
+        FROM activation_codes
+        WHERE code = %s
+        """,
         (data.code,)
     )
+
     row = cur.fetchone()
 
     if not row:
@@ -98,17 +90,26 @@ def activate_code(data: ActivateReq):
     used, expires_at = row
 
     if used:
-        raise HTTPException(status_code=400, detail="الكود مستخدم")
+        raise HTTPException(status_code=400, detail="الكود مستخدم مسبقًا")
 
     if expires_at < datetime.now():
         raise HTTPException(status_code=400, detail="الكود منتهي")
 
+    # 🔒 يمكن جعله يُستهلك مرة واحدة (اختياري)
     cur.execute(
         "UPDATE activation_codes SET used = TRUE WHERE code = %s",
         (data.code,)
     )
     conn.commit()
+
     cur.close()
     conn.close()
 
-    return {"status": "activated"}
+    # ====== منطق الأداة (تجربة فقط) ======
+    answer = (
+        "تم قبول الكود بنجاح ✅\n\n"
+        f"سؤالك:\n{data.prompt}\n\n"
+        "هذا رد تجريبي من الأداة المقفلة."
+    )
+
+    return {"answer": answer}

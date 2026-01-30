@@ -1,80 +1,31 @@
-from database import init_db
 from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from datetime import datetime, timedelta
-import psycopg2, os, uuid
+from database import init_db, validate_code
 
 app = FastAPI()
 
+# ⚠️ تُنفذ مرة واحدة عند تشغيل السيرفر
 init_db()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-def get_db():
-    return psycopg2.connect(DATABASE_URL)
-
-# ===== Models =====
 class AskRequest(BaseModel):
+    prompt: str
     code: str
 
-# ===== Health =====
 @app.get("/health")
 def health():
-    return {"status": "OK"}
+    return {"status": "ok"}
 
-# ===== Generate Code (admin) =====
-@app.post("/admin/generate")
-def generate_code():
-    code = str(uuid.uuid4())
-    expires = datetime.now() + timedelta(minutes=10)
+@app.post("/ask")
+def ask(data: AskRequest):
+    if not validate_code(data.code):
+        raise HTTPException(status_code=403, detail="كود التفعيل غير صالح أو منتهي")
 
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("""
-        INSERT INTO activation_codes (code, expires_at)
-        VALUES (%s, %s)
-    """, (code, expires))
-    conn.commit()
-    conn.close()
-
-    return {"code": code, "expires_at": expires}
-
-# ===== Use Code =====
-@app.post("/use")
-def use_code(data: AskRequest):
-    conn = get_db()
-    cur = conn.cursor()
-
-    cur.execute(
-        "SELECT used, expires_at FROM activation_codes WHERE code=%s",
-        (data.code,)
-    )
-    row = cur.fetchone()
-
-    if not row:
-        raise HTTPException(401, "كود غير موجود")
-
-    used, expires_at = row
-
-    if used:
-        raise HTTPException(401, "الكود مستخدم")
-
-    if datetime.now() > expires_at:
-        raise HTTPException(401, "الكود منتهي")
-
-    cur.execute(
-        "UPDATE activation_codes SET used=true WHERE code=%s",
-        (data.code,)
-    )
-    conn.commit()
-    conn.close()
-
-    return {"message": "تم التفعيل بنجاح ✅"}
+    return {
+        "answer": (
+            "1. الذكاء الاصطناعي يساهم في تطوير التعليم.\n"
+            "2. يساعد المعلم على تحسين أساليب التدريس.\n"
+            "3. يرفع تفاعل الطلاب داخل الصف.\n"
+            "4. يدعم التقييم والمتابعة بدقة.\n"
+            "5. يمثل مستقبل التعليم الحديث."
+        )
+    }

@@ -1,57 +1,77 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import uuid
+from datetime import datetime, timedelta
+import psycopg2, os, uuid
 
 app = FastAPI()
 
-# ===== CORS =====
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ===== تخزين الأكواد في الذاكرة =====
-activation_codes = {}  # code: used(True/False)
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-# ===== نماذج الطلب =====
+def get_db():
+    return psycopg2.connect(DATABASE_URL)
+
+# ===== Models =====
 class AskRequest(BaseModel):
-    prompt: str
     code: str
 
-# ===== توليد كود تفعيل =====
+# ===== Health =====
+@app.get("/health")
+def health():
+    return {"status": "OK"}
+
+# ===== Generate Code (admin) =====
 @app.post("/admin/generate")
 def generate_code():
     code = str(uuid.uuid4())
-    activation_codes[code] = False  # لم يُستخدم
-    return {"code": code}
+    expires = datetime.now() + timedelta(minutes=10)
 
-# ===== الأداة المقفلة =====
-@app.post("/ask")
-def ask(data: AskRequest):
-    if data.code not in activation_codes:
-        raise HTTPException(status_code=401, detail="كود تفعيل غير صالح")
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO activation_codes (code, expires_at)
+        VALUES (%s, %s)
+    """, (code, expires))
+    conn.commit()
+    conn.close()
 
-    if activation_codes[data.code]:
-        raise HTTPException(status_code=401, detail="كود التفعيل مستخدم")
+    return {"code": code, "expires_at": expires}
 
-    # تعليم الكود كمستخدم
-    activation_codes[data.code] = True
+# ===== Use Code =====
+@app.post("/use")
+def use_code(data: AskRequest):
+    conn = get_db()
+    cur = conn.cursor()
 
-    return {
-        "answer": (
-            "الأداة تعمل بنجاح.\n"
-            "تم التحقق من كود التفعيل.\n"
-            "هذا رد تجريبي.\n"
-            "النظام يعمل كما هو متوقع.\n"
-            "جاهزون للخطوة التالية."
-        )
-    }
+    cur.execute(
+        "SELECT used, expires_at FROM activation_codes WHERE code=%s",
+        (data.code,)
+    )
+    row = cur.fetchone()
 
-# ===== فحص السيرفر =====
-@app.get("/health")
-def health():
-    return {"status": "ok"}
+    if not row:
+        raise HTTPException(401, "كود غير موجود")
+
+    used, expires_at = row
+
+    if used:
+        raise HTTPException(401, "الكود مستخدم")
+
+    if datetime.now() > expires_at:
+        raise HTTPException(401, "الكود منتهي")
+
+    cur.execute(
+        "UPDATE activation_codes SET used=true WHERE code=%s",
+        (data.code,)
+    )
+    conn.commit()
+    conn.close()
+
+    return {"message": "تم التفعيل بنجاح ✅"}

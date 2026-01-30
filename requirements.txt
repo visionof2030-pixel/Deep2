@@ -1,4 +1,3 @@
 fastapi
 uvicorn
-gunicorn
-psycopg2-binary
+google-generativeai

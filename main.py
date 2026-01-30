@@ -5,7 +5,7 @@ from database import init_db, validate_code
 app = FastAPI()
 
 # ⚠️ تُنفذ مرة واحدة عند تشغيل السيرفر
-init_db()
+#init_db()
 
 class AskRequest(BaseModel):
     prompt: str

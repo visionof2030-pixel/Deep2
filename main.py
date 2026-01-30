@@ -1,12 +1,17 @@
-from fastapi import FastAPI, HTTPException, Header
+# main.py
+from fastapi import FastAPI, HTTPException, Depends, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
-from datetime import datetime, timedelta
-import psycopg2
 import os
-import uuid
+import itertools
+import google.generativeai as genai
+from database import init_db, get_connection
+from create_key import create_key
+from security import activation_required
 
-# ================== إعداد التطبيق ==================
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
+
 app = FastAPI()
 
 app.add_middleware(
@@ -17,99 +22,137 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
+init_db()
 
-# ================== اتصال قاعدة البيانات ==================
-def get_db():
-    return psycopg2.connect(DATABASE_URL)
-
-# ================== نماذج الطلب ==================
-class GenerateReq(BaseModel):
-    days_valid: int
-
-class UseReq(BaseModel):
-    code: str
+class Req(BaseModel):
     prompt: str
 
-# ================== اختبار السيرفر ==================
-@app.get("/health")
-def health():
-    return {"status": "ok", "time": datetime.now()}
+class GenerateKeyReq(BaseModel):
+    expires_at: str | None = None
+    usage_limit: int | None = None
 
-# ================== توليد كود تفعيل ==================
-@app.post("/admin/generate")
-def generate_code(
-    data: GenerateReq,
-    x_admin_token: str = Header(None)
-):
+api_keys = [
+    os.getenv("GEMINI_API_KEY_1"),
+    os.getenv("GEMINI_API_KEY_2"),
+    os.getenv("GEMINI_API_KEY_3"),
+    os.getenv("GEMINI_API_KEY_4"),
+    os.getenv("GEMINI_API_KEY_5"),
+    os.getenv("GEMINI_API_KEY_6"),
+    os.getenv("GEMINI_API_KEY_7"),
+]
+
+api_keys = [k for k in api_keys if k]
+
+if not api_keys:
+    raise RuntimeError("No GEMINI API KEYS found")
+
+key_cycle = itertools.cycle(api_keys)
+
+def get_api_key():
+    return next(key_cycle)
+
+def admin_auth(x_admin_token: str = Header(...)):
     if x_admin_token != ADMIN_TOKEN:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    code = str(uuid.uuid4())
-    expires_at = datetime.now() + timedelta(days=data.days_valid)
+@app.get("/health")
+def health():
+    return {"status": "ok"}
 
-    conn = get_db()
+@app.post("/ask")
+def ask(req: Req, _: None = Depends(activation_required)):
+    try:
+        genai.configure(api_key=get_api_key())
+        model = genai.GenerativeModel("models/gemini-2.5-flash-lite")
+        response = model.generate_content(req.prompt)
+        return {"answer": response.text}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/admin/generate", dependencies=[Depends(admin_auth)])
+def admin_generate(req: GenerateKeyReq):
+    return {"code": create_key(req.expires_at, req.usage_limit)}
+
+@app.get("/admin/codes", dependencies=[Depends(admin_auth)])
+def admin_codes():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id, code, is_active, usage_count FROM activation_codes")
+    rows = cur.fetchall()
+    conn.close()
+    return [
+        {"id": r[0], "code": r[1], "active": bool(r[2]), "usage": r[3]}
+        for r in rows
+    ]
+
+@app.put("/admin/code/{code_id}/toggle", dependencies=[Depends(admin_auth)])
+def admin_toggle(code_id: int):
+    conn = get_connection()
     cur = conn.cursor()
     cur.execute(
-        """
-        INSERT INTO activation_codes (code, expires_at)
-        VALUES (%s, %s)
-        """,
-        (code, expires_at)
+        "UPDATE activation_codes SET is_active = CASE WHEN is_active=1 THEN 0 ELSE 1 END WHERE id=?",
+        (code_id,)
     )
     conn.commit()
-    cur.close()
     conn.close()
+    return {"status": "ok"}
 
-    return {
-        "code": code,
-        "expires_at": expires_at
-    }
-
-# ================== استخدام الأداة بالكود ==================
-@app.post("/use")
-def use_tool(data: UseReq):
-    conn = get_db()
+@app.delete("/admin/code/{code_id}", dependencies=[Depends(admin_auth)])
+def admin_delete(code_id: int):
+    conn = get_connection()
     cur = conn.cursor()
-
-    cur.execute(
-        """
-        SELECT used, expires_at
-        FROM activation_codes
-        WHERE code = %s
-        """,
-        (data.code,)
-    )
-
-    row = cur.fetchone()
-
-    if not row:
-        raise HTTPException(status_code=400, detail="كود غير موجود")
-
-    used, expires_at = row
-
-    if used:
-        raise HTTPException(status_code=400, detail="الكود مستخدم مسبقًا")
-
-    if expires_at < datetime.now():
-        raise HTTPException(status_code=400, detail="الكود منتهي")
-
-    # 🔒 يمكن جعله يُستهلك مرة واحدة (اختياري)
-    cur.execute(
-        "UPDATE activation_codes SET used = TRUE WHERE code = %s",
-        (data.code,)
-    )
+    cur.execute("DELETE FROM activation_codes WHERE id=?", (code_id,))
     conn.commit()
-
-    cur.close()
     conn.close()
+    return {"status": "deleted"}
 
-    # ====== منطق الأداة (تجربة فقط) ======
-    answer = (
-        "تم قبول الكود بنجاح ✅\n\n"
-        f"سؤالك:\n{data.prompt}\n\n"
-        "هذا رد تجريبي من الأداة المقفلة."
-    )
-
-    return {"answer": answer}
+@app.get("/admin", response_class=HTMLResponse)
+def admin_page():
+    return """
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin Panel</title>
+<style>
+body{font-family:sans-serif;padding:10px}
+input,button{width:100%;padding:10px;margin:5px 0}
+table{width:100%;border-collapse:collapse}
+td,th{border:1px solid #ccc;padding:5px;font-size:12px}
+</style>
+</head>
+<body>
+<h3>Admin Panel</h3>
+<input id="token" placeholder="Admin Token">
+<button onclick="saveToken()">Save Token</button>
+<button onclick="generate()">Generate Key</button>
+<table id="tbl"></table>
+<script>
+const api='/admin';
+function saveToken(){localStorage.setItem('t',document.getElementById('token').value);load();}
+function h(){return {'X-Admin-Token':localStorage.getItem('t')}}
+function generate(){
+fetch(api+'/generate',{method:'POST',headers:{...h(),'Content-Type':'application/json'},body:'{}'}).then(load)
+}
+function toggle(id){
+fetch(api+'/code/'+id+'/toggle',{method:'PUT',headers:h()}).then(load)
+}
+function del(id){
+fetch(api+'/code/'+id,{method:'DELETE',headers:h()}).then(load)
+}
+function load(){
+fetch(api+'/codes',{headers:h()}).then(r=>r.json()).then(d=>{
+let t='<tr><th>Code</th><th>Use</th><th>Act</th></tr>';
+d.forEach(c=>{
+t+=`<tr><td>${c.code}</td><td>${c.usage}</td>
+<td><button onclick="toggle(${c.id})">Toggle</button>
+<button onclick="del(${c.id})">Del</button></td></tr>`;
+});
+document.getElementById('tbl').innerHTML=t;
+})
+}
+load();
+</script>
+</body>
+</html>
+"""

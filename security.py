@@ -1,4 +1,3 @@
-# security.py
 from fastapi import Header
 from key_logic import verify_code
 

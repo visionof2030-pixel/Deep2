@@ -1,67 +1,99 @@
-from fastapi import FastAPI, Header, HTTPException
-from datetime import datetime, timedelta
-import jwt
 import os
+import random
+from datetime import datetime
+from fastapi import FastAPI, Header, HTTPException
+from pydantic import BaseModel
+import google.generativeai as genai
 
-# ================== إعدادات أساسية ==================
-app = FastAPI()
+# ======================
+# إعدادات عامة
+# ======================
 
-SECRET_KEY = os.getenv("SECRET_KEY", "CHANGE_ME_SECRET")
-ADMIN_SECRET = os.getenv("ADMIN_SECRET", "ADMIN123")
-ALGORITHM = "HS256"
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
+SECRET_KEY = os.getenv("SECRET_KEY")
 
-# ================== دالة التحقق من كود التفعيل ==================
-def verify_activation_code(code: str):
+if not ADMIN_TOKEN or not SECRET_KEY:
+    raise RuntimeError("ADMIN_TOKEN or SECRET_KEY not set")
+
+# ===== مفاتيح Gemini (7 فقط) =====
+GEMINI_KEYS = [
+    os.getenv("GEMINI_API_KEY_1"),
+    os.getenv("GEMINI_API_KEY_2"),
+    os.getenv("GEMINI_API_KEY_3"),
+    os.getenv("GEMINI_API_KEY_4"),
+    os.getenv("GEMINI_API_KEY_5"),
+    os.getenv("GEMINI_API_KEY_6"),
+    os.getenv("GEMINI_API_KEY_7"),
+]
+
+GEMINI_KEYS = [k for k in GEMINI_KEYS if k]
+
+if not GEMINI_KEYS:
+    raise RuntimeError("No Gemini API keys found")
+
+# ======================
+# FastAPI
+# ======================
+
+app = FastAPI(title="Gemini API Gateway")
+
+# ======================
+# Models
+# ======================
+
+class GenerateRequest(BaseModel):
+    prompt: str
+
+class CodeRequest(BaseModel):
+    expires_at: str  # مثال: 2026-12-31
+
+# ======================
+# Helpers
+# ======================
+
+def check_admin(x_admin_token: str):
+    if x_admin_token != ADMIN_TOKEN:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+def pick_gemini():
+    key = random.choice(GEMINI_KEYS)
+    genai.configure(api_key=key)
+    return genai.GenerativeModel("gemini-pro")
+
+# ======================
+# Routes
+# ======================
+
+@app.get("/")
+def health():
+    return {
+        "status": "ok",
+        "time": datetime.utcnow().isoformat()
+    }
+
+@app.post("/generate")
+def generate(data: GenerateRequest):
     try:
-        payload = jwt.decode(code, SECRET_KEY, algorithms=[ALGORITHM])
-        if payload.get("type") != "activation":
-            raise HTTPException(status_code=401, detail="Invalid code type")
-        return True
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Activation code expired")
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid activation code")
+        model = pick_gemini()
+        response = model.generate_content(data.prompt)
+        return {
+            "success": True,
+            "result": response.text
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
 
-# ================== endpoint فحص التفعيل ==================
-@app.get("/health")
-def health_check(x_activation_code: str = Header(...)):
-    verify_activation_code(x_activation_code)
-    return {"status": "ok"}
-
-# ================== توليد كود تفعيل (للمالك فقط) ==================
-@app.get("/admin/generate")
-def generate_activation_code(days: int, secret: str):
-    if secret != ADMIN_SECRET:
-        raise HTTPException(status_code=403, detail="Forbidden")
-
-    payload = {
-        "type": "activation",
-        "exp": datetime.utcnow() + timedelta(days=days),
-        "created_at": datetime.utcnow().isoformat()
-    }
-
-    token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
-
-    return {
-        "valid_days": days,
-        "activation_code": token
-    }
-
-# ================== endpoint الذكاء الاصطناعي ==================
-@app.post("/ask")
-def ask_ai(
-    data: dict,
-    x_activation_code: str = Header(...)
+@app.post("/admin/create-code")
+def create_code(
+    data: CodeRequest,
+    x_admin_token: str = Header(...)
 ):
-    # التحقق من كود التفعيل
-    verify_activation_code(x_activation_code)
+    check_admin(x_admin_token)
 
-    prompt = data.get("prompt")
-    if not prompt:
-        raise HTTPException(status_code=400, detail="Prompt is required")
-
-    # 🔴 هنا مكان ربط Gemini أو أي AI لاحقًا
-    # حالياً رد تجريبي حتى يشتغل المشروع بدون أخطاء
     return {
-        "answer": "تم استلام الطلب بنجاح. هذا رد تجريبي من الخادم."
+        "message": "Endpoint جاهز — سيتم ربط JWT لاحقًا",
+        "expires_at": data.expires_at
     }

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import os
@@ -7,6 +7,7 @@ import google.generativeai as genai
 
 app = FastAPI()
 
+# CORS (اختياري لكن مفيد)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -15,10 +16,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class AskRequest(BaseModel):
+# ====== Models ======
+class Req(BaseModel):
     prompt: str
 
-# مفاتيح Gemini (حتى 9)
+# ====== Gemini API Keys (حتى 9 مفاتيح) ======
 api_keys = [
     os.getenv("GEMINI_API_KEY_1"),
     os.getenv("GEMINI_API_KEY_2"),
@@ -34,23 +36,20 @@ api_keys = [
 api_keys = [k for k in api_keys if k]
 
 if not api_keys:
-    raise RuntimeError("❌ لم يتم العثور على أي مفتاح Gemini")
+    raise RuntimeError("No GEMINI API keys found")
 
 key_cycle = itertools.cycle(api_keys)
 
 def get_api_key():
     return next(key_cycle)
 
-@app.get("/")
-def root():
-    return {"message": "Server is running"}
-
+# ====== Routes ======
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
 @app.post("/ask")
-def ask(req: AskRequest):
+def ask(req: Req):
     try:
         genai.configure(api_key=get_api_key())
         model = genai.GenerativeModel("models/gemini-2.5-flash-lite")

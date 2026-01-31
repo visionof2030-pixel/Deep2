@@ -58,7 +58,7 @@ def check_admin(x_admin_token: str):
 def pick_gemini():
     key = random.choice(GEMINI_KEYS)
     genai.configure(api_key=key)
-    return genai.GenerativeModel("gemini-pro")
+    return genai.GenerativeModel("models/gemini-2.5-flash-lite")
 
 # ======================
 # Routes

@@ -1,5 +1,5 @@
 # security.py
-from fastapi import Header, Depends
+from fastapi import Header
 from key_logic import verify_code
 
 def activation_required(x_activation_code: str = Header(...)):

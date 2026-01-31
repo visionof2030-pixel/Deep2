@@ -7,7 +7,7 @@ import google.generativeai as genai
 
 app = FastAPI()
 
-# CORS (اختياري لكن مفيد)
+# CORS (مفتوح للتجربة)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,11 +16,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ====== Models ======
+# ========= Models =========
 class Req(BaseModel):
     prompt: str
 
-# ====== Gemini API Keys (حتى 9 مفاتيح) ======
+# ========= Gemini API Keys (9) =========
 api_keys = [
     os.getenv("GEMINI_API_KEY_1"),
     os.getenv("GEMINI_API_KEY_2"),
@@ -36,18 +36,19 @@ api_keys = [
 api_keys = [k for k in api_keys if k]
 
 if not api_keys:
-    raise RuntimeError("No GEMINI API keys found")
+    raise RuntimeError("No GEMINI API KEYS found")
 
 key_cycle = itertools.cycle(api_keys)
 
 def get_api_key():
     return next(key_cycle)
 
-# ====== Routes ======
+# ========= Simple Health Check =========
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
+# ========= Main Endpoint =========
 @app.post("/ask")
 def ask(req: Req):
     try:

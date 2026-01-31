@@ -3,59 +3,65 @@ from datetime import datetime, timedelta
 import jwt
 import os
 
-# ===== إعدادات =====
-SECRET_KEY = os.getenv("SECRET_KEY", "CHANGE_THIS_SECRET")
-ALGORITHM = "HS256"
-
+# ================== إعدادات أساسية ==================
 app = FastAPI()
 
-# ===== دالة توليد كود تفعيل (لك أنت فقط) =====
-def generate_activation_code(days: int):
-    payload = {
-        "type": "activation",
-        "exp": datetime.utcnow() + timedelta(days=days)
-    }
-    token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
-    return token
+SECRET_KEY = os.getenv("SECRET_KEY", "CHANGE_ME_SECRET")
+ADMIN_SECRET = os.getenv("ADMIN_SECRET", "ADMIN123")
+ALGORITHM = "HS256"
 
-# مثال استخدام (احذفه بعد ما تأخذ الكود)
-print("Activation code (30 days):")
-print(generate_activation_code(30))
-
-
-# ===== فحص الكود =====
-def verify_code(code: str):
+# ================== دالة التحقق من كود التفعيل ==================
+def verify_activation_code(code: str):
     try:
-        jwt.decode(code, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(code, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("type") != "activation":
+            raise HTTPException(status_code=401, detail="Invalid code type")
         return True
     except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Activation expired")
-    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Activation code expired")
+    except Exception:
         raise HTTPException(status_code=401, detail="Invalid activation code")
 
-
-# ===== endpoint للفحص (الفرونت يستخدمه) =====
+# ================== endpoint فحص التفعيل ==================
 @app.get("/health")
-def health(x_activation_code: str = Header(None)):
-    if not x_activation_code:
-        raise HTTPException(status_code=401, detail="Missing activation code")
-
-    verify_code(x_activation_code)
+def health_check(x_activation_code: str = Header(...)):
+    verify_activation_code(x_activation_code)
     return {"status": "ok"}
 
+# ================== توليد كود تفعيل (للمالك فقط) ==================
+@app.get("/admin/generate")
+def generate_activation_code(days: int, secret: str):
+    if secret != ADMIN_SECRET:
+        raise HTTPException(status_code=403, detail="Forbidden")
 
-# ===== endpoint الذكاء الاصطناعي (اختياري الآن) =====
+    payload = {
+        "type": "activation",
+        "exp": datetime.utcnow() + timedelta(days=days),
+        "created_at": datetime.utcnow().isoformat()
+    }
+
+    token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+    return {
+        "valid_days": days,
+        "activation_code": token
+    }
+
+# ================== endpoint الذكاء الاصطناعي ==================
 @app.post("/ask")
 def ask_ai(
-    payload: dict,
-    x_activation_code: str = Header(None)
+    data: dict,
+    x_activation_code: str = Header(...)
 ):
-    if not x_activation_code:
-        raise HTTPException(status_code=401, detail="Missing activation code")
+    # التحقق من كود التفعيل
+    verify_activation_code(x_activation_code)
 
-    verify_code(x_activation_code)
+    prompt = data.get("prompt")
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Prompt is required")
 
-    # هنا لاحقًا تحط Gemini / AI logic
+    # 🔴 هنا مكان ربط Gemini أو أي AI لاحقًا
+    # حالياً رد تجريبي حتى يشتغل المشروع بدون أخطاء
     return {
-        "answer": "تم التحقق من الكود بنجاح، الذكاء الاصطناعي يعمل."
+        "answer": "تم استلام الطلب بنجاح. هذا رد تجريبي من الخادم."
     }

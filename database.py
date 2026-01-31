@@ -1,4 +1,3 @@
-# database.py
 import os
 import psycopg2
 
@@ -13,9 +12,9 @@ def init_db():
     cur.execute("""
     CREATE TABLE IF NOT EXISTS activation_codes (
         id SERIAL PRIMARY KEY,
-        code TEXT UNIQUE NOT NULL,
+        code TEXT UNIQUE,
         is_active BOOLEAN DEFAULT TRUE,
-        created_at TIMESTAMP NOT NULL,
+        created_at TIMESTAMP,
         expires_at TIMESTAMP,
         usage_limit INTEGER,
         usage_count INTEGER DEFAULT 0,
@@ -23,4 +22,5 @@ def init_db():
     )
     """)
     conn.commit()
+    cur.close()
     conn.close()

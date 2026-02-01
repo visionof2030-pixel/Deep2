@@ -2,9 +2,9 @@ import os
 import random
 from datetime import datetime
 from fastapi import FastAPI, Header, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import google.generativeai as genai
+import jwt
 
 # ======================
 # إعدادات عامة
@@ -15,6 +15,8 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 
 if not ADMIN_TOKEN or not SECRET_KEY:
     raise RuntimeError("ADMIN_TOKEN or SECRET_KEY not set")
+
+JWT_ALGORITHM = "HS256"
 
 # ===== مفاتيح Gemini (7 فقط) =====
 GEMINI_KEYS = [
@@ -28,7 +30,6 @@ GEMINI_KEYS = [
 ]
 
 GEMINI_KEYS = [k for k in GEMINI_KEYS if k]
-
 if not GEMINI_KEYS:
     raise RuntimeError("No Gemini API keys found")
 
@@ -36,16 +37,7 @@ if not GEMINI_KEYS:
 # FastAPI
 # ======================
 
-app = FastAPI(title="Gemini API Gateway")
-
-# ===== CORS (ضروري للمتصفح و JSFiddle) =====
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],      # للاختبار فقط
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app = FastAPI(title="Gemini Gateway with JWT")
 
 # ======================
 # Models
@@ -55,22 +47,32 @@ class GenerateRequest(BaseModel):
     prompt: str
 
 class CodeRequest(BaseModel):
-    expires_at: str  # مثال: 2026-12-31
+    expires_at: str  # YYYY-MM-DD
+
+class VerifyRequest(BaseModel):
+    token: str
 
 # ======================
 # Helpers
 # ======================
 
-def check_admin(x_admin_token: str):
-    if x_admin_token != ADMIN_TOKEN:
+def check_admin(token: str):
+    if token != ADMIN_TOKEN:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 def pick_gemini():
     key = random.choice(GEMINI_KEYS)
     genai.configure(api_key=key)
-
-    # ✅ النموذج الصحيح
     return genai.GenerativeModel("gemini-2.5-flash-lite")
+
+def create_jwt(expires_at: str):
+    exp = datetime.strptime(expires_at, "%Y-%m-%d")
+    payload = {
+        "type": "activation",
+        "exp": exp,
+        "iat": datetime.utcnow()
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm=JWT_ALGORITHM)
 
 # ======================
 # Routes
@@ -78,26 +80,16 @@ def pick_gemini():
 
 @app.get("/")
 def health():
-    return {
-        "status": "ok",
-        "time": datetime.utcnow().isoformat()
-    }
+    return {"status": "ok"}
 
 @app.post("/generate")
 def generate(data: GenerateRequest):
     try:
         model = pick_gemini()
         response = model.generate_content(data.prompt)
-
-        return {
-            "success": True,
-            "result": response.text
-        }
+        return {"answer": response.text}
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        }
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/admin/create-code")
 def create_code(
@@ -105,8 +97,25 @@ def create_code(
     x_admin_token: str = Header(...)
 ):
     check_admin(x_admin_token)
-
+    token = create_jwt(data.expires_at)
     return {
-        "message": "Endpoint جاهز — سيتم ربط JWT لاحقًا",
+        "activation_code": token,
         "expires_at": data.expires_at
     }
+
+@app.post("/verify-code")
+def verify_code(data: VerifyRequest):
+    try:
+        decoded = jwt.decode(
+            data.token,
+            SECRET_KEY,
+            algorithms=[JWT_ALGORITHM]
+        )
+        return {
+            "valid": True,
+            "expires_at": decoded["exp"]
+        }
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Code expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid code")

@@ -1,23 +1,22 @@
 import os
-import jwt
 import random
 import datetime
-from fastapi import FastAPI, HTTPException, Header
-from pydantic import BaseModel
+import jwt
 import google.generativeai as genai
+
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 # ======================
-# Environment Variables
+# ENV
 # ======================
-
 JWT_SECRET = os.getenv("JWT_SECRET")
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
 
 if not JWT_SECRET or not ADMIN_TOKEN:
-    raise RuntimeError("JWT_SECRET or ADMIN_TOKEN not set")
+    raise RuntimeError("JWT_SECRET or ADMIN_TOKEN missing")
 
-# ===== Gemini API Keys =====
 GEMINI_KEYS = [
     os.getenv("GEMINI_API_KEY_1"),
     os.getenv("GEMINI_API_KEY_2"),
@@ -27,16 +26,14 @@ GEMINI_KEYS = [
     os.getenv("GEMINI_API_KEY_6"),
     os.getenv("GEMINI_API_KEY_7"),
 ]
-
 GEMINI_KEYS = [k for k in GEMINI_KEYS if k]
 
 if not GEMINI_KEYS:
-    raise RuntimeError("No Gemini API keys found")
+    raise RuntimeError("No Gemini API Keys found")
 
 # ======================
-# FastAPI App
+# APP
 # ======================
-
 app = FastAPI(title="Educational AI Tool")
 
 app.add_middleware(
@@ -47,59 +44,33 @@ app.add_middleware(
 )
 
 # ======================
-# Models
+# MODELS
 # ======================
-
 class AskRequest(BaseModel):
     prompt: str
 
 # ======================
-# Helpers
+# HELPERS
 # ======================
-
-def pick_gemini():
+def pick_gemini_model():
     key = random.choice(GEMINI_KEYS)
     genai.configure(api_key=key)
-    return genai.GenerativeModel("models/gemini-2.5-flash-lite")
+    return genai.GenerativeModel("models/gemini-1.5-flash")
 
-
-# ---------- JWT (Activation) ----------
-def verify_activation_jwt(token: str):
+def verify_jwt(token: str):
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
         if payload.get("type") != "activation":
-            raise HTTPException(status_code=401, detail="Invalid activation token")
+            raise HTTPException(status_code=401, detail="Invalid token type")
         return payload
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Activation code expired")
     except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid activation code")
-
-
-# ---------- JWT (Access) ----------
-def create_access_jwt():
-    payload = {
-        "type": "access",
-        "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=12)
-    }
-    return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
-
-
-def verify_access_jwt(token: str):
-    try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
-        if payload.get("type") != "access":
-            raise HTTPException(status_code=401, detail="Invalid access token")
-        return payload
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        raise HTTPException(status_code=401, detail="Invalid access token")
 
 # ======================
-# Routes
+# ROUTES
 # ======================
-
 @app.get("/")
 def health():
     return {
@@ -107,9 +78,9 @@ def health():
         "time": datetime.datetime.utcnow().isoformat()
     }
 
-# ---------- توليد كود التفعيل (للأدمن فقط) ----------
+# -------- توليد كود تفعيل --------
 @app.get("/easy-code")
-def generate_activation_code(key: str):
+def easy_code(key: str):
     if key != ADMIN_TOKEN:
         raise HTTPException(status_code=403, detail="Forbidden")
 
@@ -125,17 +96,7 @@ def generate_activation_code(key: str):
         "expires_in": "30 days"
     }
 
-# ---------- تسجيل الدخول (تحويل التفعيل إلى Access Token) ----------
-@app.post("/login")
-def login(activation_code: str = Header(...)):
-    verify_activation_jwt(activation_code)
-    access_token = create_access_jwt()
-    return {
-        "access_token": access_token,
-        "expires_in": "12 hours"
-    }
-
-# ---------- استخدام الذكاء الاصطناعي ----------
+# -------- توليد رد Gemini --------
 @app.post("/generate")
 def generate(
     data: AskRequest,
@@ -145,11 +106,12 @@ def generate(
         raise HTTPException(status_code=401, detail="Missing Bearer token")
 
     token = authorization.replace("Bearer ", "").strip()
-    verify_access_jwt(token)
+    verify_jwt(token)
 
     try:
-        model = pick_gemini()
+        model = pick_gemini_model()
         response = model.generate_content(data.prompt)
+
         return {
             "answer": response.text
         }

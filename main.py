@@ -26,7 +26,6 @@ GEMINI_KEYS = [
     os.getenv("GEMINI_API_KEY_6"),
     os.getenv("GEMINI_API_KEY_7"),
 ]
-
 GEMINI_KEYS = [k for k in GEMINI_KEYS if k]
 
 if not GEMINI_KEYS:
@@ -79,7 +78,7 @@ def health():
         "time": datetime.datetime.utcnow().isoformat()
     }
 
-# -------- توليد كود تفعيل (للإدارة فقط) --------
+# -------- توليد كود تفعيل (للمشرف فقط) --------
 @app.get("/easy-code")
 def easy_code(key: str):
     if key != ADMIN_TOKEN:
@@ -97,18 +96,19 @@ def easy_code(key: str):
         "expires_in": "30 days"
     }
 
-# -------- التحقق من التفعيل (لصفحة التفعيل) --------
-@app.post("/verify")
-def verify_token(x_token: str = Header(..., alias="X-Token")):
+# -------- تحقق من التفعيل فقط --------
+@app.get("/verify")
+def verify(x_token: str = Header(..., alias="X-Token")):
     verify_jwt(x_token)
-    return {"valid": True}
+    return {"status": "ok"}
 
-# -------- توليد محتوى الذكاء الاصطناعي --------
+# -------- توليد رد Gemini --------
 @app.post("/generate")
 def generate(
     data: AskRequest,
     x_token: str = Header(..., alias="X-Token")
 ):
+    # تحقق صارم من التفعيل
     verify_jwt(x_token)
 
     try:
@@ -116,8 +116,8 @@ def generate(
         response = model.generate_content(data.prompt)
 
         return {
-            "success": True,
-            "result": response.text
+            "answer": response.text
         }
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

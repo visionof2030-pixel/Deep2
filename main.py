@@ -1,24 +1,23 @@
 import os
+import jwt
 import random
-from datetime import datetime
-from fastapi import FastAPI, Header, HTTPException
+import datetime
+from fastapi import FastAPI, HTTPException, Header
 from pydantic import BaseModel
 import google.generativeai as genai
-import jwt
+from fastapi.middleware.cors import CORSMiddleware
 
 # ======================
-# إعدادات عامة
+# Environment variables
 # ======================
 
+JWT_SECRET = os.getenv("JWT_SECRET")
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
-SECRET_KEY = os.getenv("SECRET_KEY")
 
-if not ADMIN_TOKEN or not SECRET_KEY:
-    raise RuntimeError("ADMIN_TOKEN or SECRET_KEY not set")
+if not JWT_SECRET or not ADMIN_TOKEN:
+    raise RuntimeError("JWT_SECRET or ADMIN_TOKEN not set")
 
-JWT_ALGORITHM = "HS256"
-
-# ===== مفاتيح Gemini (7 فقط) =====
+# ===== Gemini API Keys (7 فقط) =====
 GEMINI_KEYS = [
     os.getenv("GEMINI_API_KEY_1"),
     os.getenv("GEMINI_API_KEY_2"),
@@ -30,6 +29,7 @@ GEMINI_KEYS = [
 ]
 
 GEMINI_KEYS = [k for k in GEMINI_KEYS if k]
+
 if not GEMINI_KEYS:
     raise RuntimeError("No Gemini API keys found")
 
@@ -37,42 +37,41 @@ if not GEMINI_KEYS:
 # FastAPI
 # ======================
 
-app = FastAPI(title="Gemini Gateway with JWT")
+app = FastAPI(title="Educational AI Tool")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ======================
 # Models
 # ======================
 
-class GenerateRequest(BaseModel):
+class AskRequest(BaseModel):
     prompt: str
-
-class CodeRequest(BaseModel):
-    expires_at: str  # YYYY-MM-DD
-
-class VerifyRequest(BaseModel):
-    token: str
 
 # ======================
 # Helpers
 # ======================
 
-def check_admin(token: str):
-    if token != ADMIN_TOKEN:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
 def pick_gemini():
     key = random.choice(GEMINI_KEYS)
     genai.configure(api_key=key)
-    return genai.GenerativeModel("gemini-2.5-flash-lite")
+    return genai.GenerativeModel("models/gemini-2.5-flash-lite")
 
-def create_jwt(expires_at: str):
-    exp = datetime.strptime(expires_at, "%Y-%m-%d")
-    payload = {
-        "type": "activation",
-        "exp": exp,
-        "iat": datetime.utcnow()
-    }
-    return jwt.encode(payload, SECRET_KEY, algorithm=JWT_ALGORITHM)
+def verify_jwt(token: str):
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        if payload.get("type") != "activation":
+            raise HTTPException(status_code=401, detail="Invalid token type")
+        return payload
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Activation code expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid activation code")
 
 # ======================
 # Routes
@@ -80,42 +79,46 @@ def create_jwt(expires_at: str):
 
 @app.get("/")
 def health():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "time": datetime.datetime.utcnow().isoformat()
+    }
 
+# ---------- توليد كود تفعيل (أسهل طريقة) ----------
+@app.get("/easy-code")
+def generate_easy_code(key: str):
+    if key != ADMIN_TOKEN:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    payload = {
+        "type": "activation",
+        "exp": datetime.datetime.utcnow() + datetime.timedelta(days=30)
+    }
+
+    token = jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+
+    return {
+        "activation_code": token,
+        "expires_in": "30 days"
+    }
+
+# ---------- استخدام الذكاء الاصطناعي ----------
 @app.post("/generate")
-def generate(data: GenerateRequest):
+def generate(
+    data: AskRequest,
+    authorization: str = Header(...)
+):
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing Bearer token")
+
+    token = authorization.replace("Bearer ", "").strip()
+    verify_jwt(token)
+
     try:
         model = pick_gemini()
         response = model.generate_content(data.prompt)
-        return {"answer": response.text}
+        return {
+            "answer": response.text
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/admin/create-code")
-def create_code(
-    data: CodeRequest,
-    x_admin_token: str = Header(...)
-):
-    check_admin(x_admin_token)
-    token = create_jwt(data.expires_at)
-    return {
-        "activation_code": token,
-        "expires_at": data.expires_at
-    }
-
-@app.post("/verify-code")
-def verify_code(data: VerifyRequest):
-    try:
-        decoded = jwt.decode(
-            data.token,
-            SECRET_KEY,
-            algorithms=[JWT_ALGORITHM]
-        )
-        return {
-            "valid": True,
-            "expires_at": decoded["exp"]
-        }
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Code expired")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid code")

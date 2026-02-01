@@ -100,7 +100,7 @@ def easy_code(key: str):
 @app.post("/generate")
 def generate(
     data: AskRequest,
-    authorization: str = Header(...)
+    authorization: str = Header(..., alias="Authorization")
 ):
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing Bearer token")

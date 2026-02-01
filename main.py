@@ -7,7 +7,6 @@ import google.generativeai as genai
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional
 
 # ======================
 # ENV
@@ -35,10 +34,7 @@ if not GEMINI_KEYS:
 # ======================
 # APP
 # ======================
-app = FastAPI(
-    title="Educational AI Tool",
-    version="1.0.0"
-)
+app = FastAPI(title="Educational AI Tool")
 
 app.add_middleware(
     CORSMiddleware,
@@ -59,7 +55,7 @@ class AskRequest(BaseModel):
 def pick_gemini_model():
     key = random.choice(GEMINI_KEYS)
     genai.configure(api_key=key)
-    return genai.GenerativeModel("models/gemini-1.5-flash")
+    return genai.GenerativeModel("models/gemini-2.5-flash-lite")
 
 def verify_jwt(token: str):
     try:
@@ -100,26 +96,24 @@ def easy_code(key: str):
         "expires_in": "30 days"
     }
 
+# -------- اختبار الهيدر (اختياري) --------
+@app.post("/debug-header")
+def debug_header(x_token: str = Header(None, alias="X-Token")):
+    return {
+        "x_token_received": x_token
+    }
+
 # -------- توليد رد Gemini --------
 @app.post("/generate")
 def generate(
     data: AskRequest,
-    authorization: Optional[str] = Header(None)
+    x_token: str = Header(..., alias="X-Token")
 ):
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Authorization header missing")
+    verify_jwt(x_token)
 
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing Bearer token")
+    model = pick_gemini_model()
+    response = model.generate_content(data.prompt)
 
-    token = authorization.replace("Bearer ", "").strip()
-    verify_jwt(token)
-
-    try:
-        model = pick_gemini_model()
-        response = model.generate_content(data.prompt)
-        return {
-            "answer": response.text
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return {
+        "answer": response.text
+    }

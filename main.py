@@ -2,6 +2,7 @@ import os
 import random
 from datetime import datetime
 from fastapi import FastAPI, Header, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import google.generativeai as genai
 
@@ -37,6 +38,15 @@ if not GEMINI_KEYS:
 
 app = FastAPI(title="Gemini API Gateway")
 
+# ===== CORS (ضروري للمتصفح و JSFiddle) =====
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],      # للاختبار فقط
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # ======================
 # Models
 # ======================
@@ -58,7 +68,9 @@ def check_admin(x_admin_token: str):
 def pick_gemini():
     key = random.choice(GEMINI_KEYS)
     genai.configure(api_key=key)
-    return genai.GenerativeModel("models/gemini-2.5-flash-lite")
+
+    # ✅ النموذج الصحيح
+    return genai.GenerativeModel("gemini-2.5-flash-lite")
 
 # ======================
 # Routes
@@ -76,6 +88,7 @@ def generate(data: GenerateRequest):
     try:
         model = pick_gemini()
         response = model.generate_content(data.prompt)
+
         return {
             "success": True,
             "result": response.text

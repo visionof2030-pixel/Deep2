@@ -2,8 +2,9 @@ import os
 import random
 import datetime
 import jwt
-import google.generativeai as genai
+import secrets
 
+import google.generativeai as genai
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -17,6 +18,7 @@ ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
 if not JWT_SECRET or not ADMIN_TOKEN:
     raise RuntimeError("JWT_SECRET or ADMIN_TOKEN missing")
 
+# ===== Gemini API Keys (7) =====
 GEMINI_KEYS = [
     os.getenv("GEMINI_API_KEY_1"),
     os.getenv("GEMINI_API_KEY_2"),
@@ -29,7 +31,7 @@ GEMINI_KEYS = [
 GEMINI_KEYS = [k for k in GEMINI_KEYS if k]
 
 if not GEMINI_KEYS:
-    raise RuntimeError("No Gemini API Keys found")
+    raise RuntimeError("No Gemini API keys found")
 
 # ======================
 # APP
@@ -44,18 +46,26 @@ app.add_middleware(
 )
 
 # ======================
+# TEMP STORE (codes → JWT)
+# ======================
+activation_store = {}
+
+# ======================
 # MODELS
 # ======================
 class AskRequest(BaseModel):
     prompt: str
 
+class ActivateRequest(BaseModel):
+    code: str
+
 # ======================
 # HELPERS
 # ======================
-def pick_gemini_model():
+def pick_gemini():
     key = random.choice(GEMINI_KEYS)
     genai.configure(api_key=key)
-    return genai.GenerativeModel("models/gemini-2.5-flash-lite")
+    return genai.GenerativeModel("models/gemini-1.5-flash")
 
 def verify_jwt(token: str):
     try:
@@ -78,11 +88,15 @@ def health():
         "time": datetime.datetime.utcnow().isoformat()
     }
 
-# -------- توليد كود تفعيل --------
+# --------------------------------------------------
+# 1️⃣ توليد كود تفعيل قصير (بدل JWT)
+# --------------------------------------------------
 @app.get("/easy-code")
 def easy_code(key: str):
     if key != ADMIN_TOKEN:
         raise HTTPException(status_code=403, detail="Forbidden")
+
+    short_code = secrets.token_hex(4).upper()  # 8 حروف فقط
 
     payload = {
         "type": "activation",
@@ -91,29 +105,47 @@ def easy_code(key: str):
 
     token = jwt.encode(payload, JWT_SECRET, algorithm="HS256")
 
+    activation_store[short_code] = token
+
     return {
-        "activation_code": token,
+        "activation_code": short_code,
         "expires_in": "30 days"
     }
 
-# -------- اختبار الهيدر (اختياري) --------
-@app.post("/debug-header")
-def debug_header(x_token: str = Header(None, alias="X-Token")):
+# --------------------------------------------------
+# 2️⃣ تحويل الكود القصير إلى JWT
+# --------------------------------------------------
+@app.post("/activate")
+def activate(data: ActivateRequest):
+    token = activation_store.get(data.code)
+
+    if not token:
+        raise HTTPException(status_code=401, detail="Invalid activation code")
+
+    # (اختياري) منع إعادة الاستخدام
+    del activation_store[data.code]
+
     return {
-        "x_token_received": x_token
+        "token": token
     }
 
-# -------- توليد رد Gemini --------
+# --------------------------------------------------
+# 3️⃣ استخدام الذكاء الاصطناعي
+# --------------------------------------------------
 @app.post("/generate")
 def generate(
     data: AskRequest,
-    x_token: str = Header(..., alias="X-Token")
+    authorization: str = Header(...)
 ):
-    verify_jwt(x_token)
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing Bearer token")
 
-    model = pick_gemini_model()
-    response = model.generate_content(data.prompt)
+    token = authorization.replace("Bearer ", "").strip()
+    verify_jwt(token)
 
-    return {
-        "answer": response.text
-    }
+    try:
+        model = pick_gemini()
+        response = model.generate_content(data.prompt)
+        return {"answer": response.text}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
